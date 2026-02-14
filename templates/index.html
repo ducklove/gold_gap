@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>국내-국제 금 가격 괴리율</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>국내-국제 금 가격 괴리율 대시보드</h1>
+            <p class="subtitle">KRX 금현물 vs COMEX 금선물</p>
+        </header>
+
+        <div id="loading">
+            <div class="spinner"></div>
+            <p>데이터를 불러오는 중...</p>
+        </div>
+
+        <div id="error" style="display:none;">
+            <p class="error-msg"></p>
+        </div>
+
+        <div id="content" style="display:none;">
+            <!-- Summary Cards -->
+            <div class="cards">
+                <div class="card">
+                    <div class="card-label">현재 괴리율</div>
+                    <div class="card-value" id="current-gap">-</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">최대 괴리율</div>
+                    <div class="card-value" id="max-gap">-</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">평균 괴리율</div>
+                    <div class="card-value" id="avg-gap">-</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">5%↑ 발생 횟수</div>
+                    <div class="card-value" id="high-gap-count">-</div>
+                </div>
+            </div>
+
+            <!-- Chart 1: Price Comparison -->
+            <div class="chart-container">
+                <h2>금 가격 비교 (KRW/g)</h2>
+                <canvas id="priceChart"></canvas>
+            </div>
+
+            <!-- Chart 2: Gap Percentage -->
+            <div class="chart-container">
+                <h2>괴리율 추이 (%)</h2>
+                <canvas id="gapChart"></canvas>
+            </div>
+
+            <!-- Table: High Gap Periods -->
+            <div class="table-container">
+                <h2>5% 이상 괴리율 발생 구간</h2>
+                <table id="gapTable">
+                    <thead>
+                        <tr>
+                            <th>시작일</th>
+                            <th>종료일</th>
+                            <th>최대 괴리율</th>
+                            <th>지속일수</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <p id="no-periods" style="display:none; color:#888; text-align:center;">
+                    5% 이상 괴리율 발생 구간이 없습니다.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    const GAP_THRESHOLD = 5;
+
+    async function loadData() {
+        try {
+            const resp = await fetch('/api/data');
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error(err.error || `HTTP ${resp.status}`);
+            }
+            const data = await resp.json();
+            renderDashboard(data);
+        } catch (e) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.querySelector('.error-msg').textContent =
+                '데이터 로딩 실패: ' + e.message;
+        }
+    }
+
+    function renderDashboard(data) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+
+        // Summary cards
+        const lastGap = data.gap_pct[data.gap_pct.length - 1];
+        const absGaps = data.gap_pct.map(Math.abs);
+        const maxGapIdx = absGaps.indexOf(Math.max(...absGaps));
+        const maxGap = data.gap_pct[maxGapIdx];
+        const avgGap = data.gap_pct.reduce((a, b) => a + b, 0) / data.gap_pct.length;
+
+        document.getElementById('current-gap').textContent = lastGap.toFixed(2) + '%';
+        document.getElementById('max-gap').textContent = maxGap.toFixed(2) + '%';
+        document.getElementById('avg-gap').textContent = avgGap.toFixed(2) + '%';
+        document.getElementById('high-gap-count').textContent =
+            data.high_gap_periods.length + '회';
+
+        // Color current gap
+        const currentGapEl = document.getElementById('current-gap');
+        if (lastGap >= GAP_THRESHOLD) {
+            currentGapEl.classList.add('high');
+        } else if (lastGap < 0) {
+            currentGapEl.classList.add('low');
+        }
+
+        renderPriceChart(data);
+        renderGapChart(data);
+        renderTable(data.high_gap_periods);
+    }
+
+    function renderPriceChart(data) {
+        const ctx = document.getElementById('priceChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.dates,
+                datasets: [
+                    {
+                        label: '국내 금 (KRX 금현물)',
+                        data: data.domestic_price,
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        fill: false,
+                    },
+                    {
+                        label: '국제 금 (COMEX, KRW 환산)',
+                        data: data.intl_price,
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        fill: false,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                scales: {
+                    x: {
+                        type: 'category',
+                        ticks: {
+                            maxTicksLimit: 12,
+                            maxRotation: 45,
+                        },
+                    },
+                    y: {
+                        title: { display: true, text: 'KRW / g' },
+                    },
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': ' +
+                                    Number(ctx.parsed.y).toLocaleString() + ' 원/g';
+                            },
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    function buildHighlightBoxes(data) {
+        // Create annotation boxes for periods where gap >= threshold
+        const boxes = {};
+        let inRegion = false;
+        let regionStart = null;
+        let regionIdx = 0;
+
+        for (let i = 0; i < data.gap_pct.length; i++) {
+            if (Math.abs(data.gap_pct[i]) >= GAP_THRESHOLD) {
+                if (!inRegion) {
+                    inRegion = true;
+                    regionStart = data.dates[i];
+                }
+            } else {
+                if (inRegion) {
+                    boxes['box' + regionIdx] = {
+                        type: 'box',
+                        xMin: regionStart,
+                        xMax: data.dates[i - 1],
+                        backgroundColor: 'rgba(231, 76, 60, 0.12)',
+                        borderWidth: 0,
+                    };
+                    regionIdx++;
+                    inRegion = false;
+                }
+            }
+        }
+        if (inRegion) {
+            boxes['box' + regionIdx] = {
+                type: 'box',
+                xMin: regionStart,
+                xMax: data.dates[data.dates.length - 1],
+                backgroundColor: 'rgba(231, 76, 60, 0.12)',
+                borderWidth: 0,
+            };
+        }
+        return boxes;
+    }
+
+    function renderGapChart(data) {
+        const ctx = document.getElementById('gapChart').getContext('2d');
+        const highlightBoxes = buildHighlightBoxes(data);
+
+        // Threshold line
+        highlightBoxes['thresholdLine'] = {
+            type: 'line',
+            yMin: GAP_THRESHOLD,
+            yMax: GAP_THRESHOLD,
+            borderColor: 'rgba(231, 76, 60, 0.7)',
+            borderWidth: 2,
+            borderDash: [6, 4],
+            label: {
+                display: true,
+                content: GAP_THRESHOLD + '%',
+                position: 'end',
+                backgroundColor: 'rgba(231, 76, 60, 0.8)',
+                color: '#fff',
+                font: { size: 11 },
+            },
+        };
+
+        // Negative threshold line
+        highlightBoxes['negThresholdLine'] = {
+            type: 'line',
+            yMin: -GAP_THRESHOLD,
+            yMax: -GAP_THRESHOLD,
+            borderColor: 'rgba(41, 128, 185, 0.7)',
+            borderWidth: 2,
+            borderDash: [6, 4],
+            label: {
+                display: true,
+                content: '-' + GAP_THRESHOLD + '%',
+                position: 'end',
+                backgroundColor: 'rgba(41, 128, 185, 0.8)',
+                color: '#fff',
+                font: { size: 11 },
+            },
+        };
+
+        // Zero line
+        highlightBoxes['zeroLine'] = {
+            type: 'line',
+            yMin: 0,
+            yMax: 0,
+            borderColor: 'rgba(0, 0, 0, 0.3)',
+            borderWidth: 1,
+        };
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.dates,
+                datasets: [
+                    {
+                        label: '괴리율 (%)',
+                        data: data.gap_pct,
+                        borderColor: '#2c3e50',
+                        backgroundColor: 'rgba(44, 62, 80, 0.1)',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        fill: true,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                scales: {
+                    x: {
+                        type: 'category',
+                        ticks: {
+                            maxTicksLimit: 12,
+                            maxRotation: 45,
+                        },
+                    },
+                    y: {
+                        title: { display: true, text: '괴리율 (%)' },
+                    },
+                },
+                plugins: {
+                    annotation: {
+                        annotations: highlightBoxes,
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return '괴리율: ' + ctx.parsed.y.toFixed(2) + '%';
+                            },
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    function renderTable(periods) {
+        const tbody = document.querySelector('#gapTable tbody');
+        if (!periods || periods.length === 0) {
+            document.getElementById('gapTable').style.display = 'none';
+            document.getElementById('no-periods').style.display = 'block';
+            return;
+        }
+
+        // Sort by max_gap descending
+        periods.sort((a, b) => b.max_gap - a.max_gap);
+
+        periods.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${p.start}</td>
+                <td>${p.end}</td>
+                <td class="highlight">${p.max_gap.toFixed(2)}%</td>
+                <td>${p.duration_days}일</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Load data on page load
+    loadData();
+    </script>
+</body>
+</html>
