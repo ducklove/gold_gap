@@ -13,6 +13,7 @@
         <header>
             <h1>국내-국제 금 가격 괴리율 대시보드</h1>
             <p class="subtitle">KRX 금현물 vs COMEX 금선물</p>
+            <p class="updated-at" id="updated-at"></p>
         </header>
 
         <div id="loading">
@@ -83,7 +84,7 @@
 
     async function loadData() {
         try {
-            const resp = await fetch('/api/data');
+            const resp = await fetch('data.json');
             if (!resp.ok) {
                 const err = await resp.json();
                 throw new Error(err.error || `HTTP ${resp.status}`);
@@ -101,6 +102,12 @@
     function renderDashboard(data) {
         document.getElementById('loading').style.display = 'none';
         document.getElementById('content').style.display = 'block';
+
+        // Updated time
+        if (data.updated_at) {
+            document.getElementById('updated-at').textContent =
+                '데이터 갱신: ' + data.updated_at;
+        }
 
         // Summary cards
         const lastGap = data.gap_pct[data.gap_pct.length - 1];
