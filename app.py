@@ -1,12 +1,12 @@
 """
-Flask 메인 앱: 국내-국제 금 가격 괴리율 웹사이트
+Flask 메인 앱: 김치프리미엄 멀티 자산 대시보드
 """
 
 import logging
 
 from flask import Flask, jsonify, render_template
 
-from data_fetcher import get_data
+from data_fetcher import get_all_data
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,7 +24,7 @@ def index():
 @app.route("/api/data")
 def api_data():
     try:
-        data = get_data()
+        data = get_all_data()
         return jsonify(data)
     except Exception as e:
         logging.exception("Data fetch failed")

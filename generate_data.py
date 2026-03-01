@@ -1,33 +1,63 @@
 """정적 배포용 data.json 생성 스크립트
 
-신규 데이터 fetch 실패 시 기존 캐시(cache/gold_data.json)를 폴백으로 사용.
+세 자산(gold, bitcoin, usdt)을 순차 fetch.
+개별 자산 fetch 실패 시 해당 자산만 건너뛰고, 전체 실패 시 캐시 폴백.
 """
 
 import json
+import logging
 import os
 import sys
 from datetime import datetime
 
-CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "gold_data.json")
+from data_fetcher import (
+    fetch_exchange_rate,
+    get_bitcoin_data,
+    get_gold_data,
+    get_usdt_data,
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CACHE_FILE = os.path.join(BASE_DIR, "cache", "all_data.json")
+OLD_GOLD_CACHE = os.path.join(BASE_DIR, "cache", "gold_data.json")
 
 
 def fetch_fresh():
-    from data_fetcher import fetch_international_gold, fetch_krx_gold, calculate_gap, find_high_gap_periods
+    fx_df = fetch_exchange_rate()
 
-    intl_df = fetch_international_gold()
-    domestic_df = fetch_krx_gold()
-    merged = calculate_gap(intl_df, domestic_df)
-    high_gap_periods = find_high_gap_periods(merged)
+    data = {}
+    errors = []
 
-    return {
-        "dates": [d.strftime("%Y-%m-%d") for d in merged.index],
-        "domestic_price": [round(float(v), 0) for v in merged["domestic_krw_per_gram"]],
-        "intl_price": [round(float(v), 0) for v in merged["intl_krw_per_gram"]],
-        "gap_pct": [round(float(v), 2) for v in merged["gap_pct"]],
-        "gold_usd_oz": [round(float(v), 2) for v in merged["gold_usd_oz"]],
-        "usd_krw": [round(float(v), 2) for v in merged["usd_krw"]],
-        "high_gap_periods": high_gap_periods,
-    }
+    for name, fetcher in [("gold", get_gold_data), ("bitcoin", get_bitcoin_data), ("usdt", get_usdt_data)]:
+        try:
+            data[name] = fetcher(fx_df)
+            print(f"  {name}: {len(data[name]['dates'])} data points")
+        except Exception as e:
+            print(f"  {name}: FAILED - {e}")
+            errors.append(name)
+
+    # Gold 실패 시 기존 캐시에서 폴백
+    if "gold" not in data and os.path.exists(OLD_GOLD_CACHE):
+        try:
+            with open(OLD_GOLD_CACHE, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            old_gold = cached["data"]
+            # 기존 컬럼명 호환: domestic_krw_per_gram → domestic_price, intl_krw_per_gram → intl_price
+            if "domestic_krw_per_gram" in str(old_gold.keys()) or "domestic_price" in old_gold:
+                data["gold"] = old_gold
+                print(f"  gold: {len(old_gold['dates'])} data points (from old cache)")
+        except Exception as e:
+            print(f"  gold old cache fallback failed: {e}")
+
+    if not data:
+        raise RuntimeError(f"All assets failed: {errors}")
+
+    return data
 
 
 def load_from_cache():
@@ -42,7 +72,6 @@ def main():
     print("Fetching fresh data...")
     try:
         data = fetch_fresh()
-        print(f"Fresh data: {len(data['dates'])} data points")
     except Exception as e:
         print(f"Fresh fetch failed: {e}")
 
@@ -50,7 +79,7 @@ def main():
         print("Falling back to cached data...")
         if os.path.exists(CACHE_FILE):
             data = load_from_cache()
-            print(f"Cached data: {len(data['dates'])} data points")
+            print("Cached data loaded")
         else:
             print("ERROR: No cached data available", file=sys.stderr)
             sys.exit(1)
@@ -60,7 +89,7 @@ def main():
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
 
-    print(f"data.json written successfully")
+    print("data.json written successfully")
 
 
 if __name__ == "__main__":

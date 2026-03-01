@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>국내-국제 금 가격 괴리율</title>
+    <title>김치프리미엄 대시보드</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
@@ -11,10 +11,16 @@
 <body>
     <div class="container">
         <header>
-            <h1>국내-국제 금 가격 괴리율 대시보드</h1>
-            <p class="subtitle">KRX 금현물 vs COMEX 금선물</p>
+            <h1>김치프리미엄 대시보드</h1>
+            <p class="subtitle" id="subtitle">GOLD / BITCOIN / USDT</p>
             <p class="updated-at" id="updated-at"></p>
         </header>
+
+        <div class="tab-nav">
+            <button class="tab-btn active" data-asset="gold" onclick="switchTab('gold')">GOLD</button>
+            <button class="tab-btn" data-asset="bitcoin" onclick="switchTab('bitcoin')">BITCOIN</button>
+            <button class="tab-btn" data-asset="usdt" onclick="switchTab('usdt')">USDT</button>
+        </div>
 
         <div id="loading">
             <div class="spinner"></div>
@@ -41,14 +47,14 @@
                     <div class="card-value" id="avg-gap">-</div>
                 </div>
                 <div class="card">
-                    <div class="card-label">5%↑ 발생 횟수</div>
+                    <div class="card-label" id="high-gap-label">5%+ 발생 횟수</div>
                     <div class="card-value" id="high-gap-count">-</div>
                 </div>
             </div>
 
             <!-- Chart 1: Price Comparison -->
             <div class="chart-container">
-                <h2>금 가격 비교 (KRW/g)</h2>
+                <h2 id="price-chart-title">가격 비교</h2>
                 <canvas id="priceChart"></canvas>
             </div>
 
@@ -60,7 +66,7 @@
 
             <!-- Table: High Gap Periods -->
             <div class="table-container">
-                <h2>5% 이상 괴리율 발생 구간</h2>
+                <h2 id="table-title">괴리율 발생 구간</h2>
                 <table id="gapTable">
                     <thead>
                         <tr>
@@ -72,15 +78,49 @@
                     </thead>
                     <tbody></tbody>
                 </table>
-                <p id="no-periods" style="display:none; color:#888; text-align:center;">
-                    5% 이상 괴리율 발생 구간이 없습니다.
-                </p>
+                <p id="no-periods" style="display:none; color:#888; text-align:center;"></p>
             </div>
         </div>
     </div>
 
     <script>
-    const GAP_THRESHOLD = 5;
+    const ASSETS = {
+        gold: {
+            label: '금 (Gold)',
+            domesticLabel: '국내 금 (KRX 금현물)',
+            intlLabel: '국제 금 (COMEX, KRW 환산)',
+            unit: 'KRW/g',
+            threshold: 5,
+            domesticColor: '#e74c3c',
+            intlColor: '#3498db',
+            highlightColor: 'rgba(231, 76, 60, 0.12)',
+        },
+        bitcoin: {
+            label: '비트코인 (Bitcoin)',
+            domesticLabel: '업비트 BTC',
+            intlLabel: '바이낸스 BTC (KRW 환산)',
+            unit: 'KRW',
+            threshold: 5,
+            domesticColor: '#f39c12',
+            intlColor: '#3498db',
+            highlightColor: 'rgba(243, 156, 18, 0.12)',
+        },
+        usdt: {
+            label: 'USDT',
+            domesticLabel: '업비트 USDT',
+            intlLabel: 'USDT 국제가 (KRW 환산)',
+            unit: 'KRW',
+            threshold: 3,
+            domesticColor: '#27ae60',
+            intlColor: '#3498db',
+            highlightColor: 'rgba(39, 174, 96, 0.12)',
+        },
+    };
+
+    let allData = null;
+    let currentAsset = 'gold';
+    let priceChartInstance = null;
+    let gapChartInstance = null;
 
     async function loadData() {
         try {
@@ -89,8 +129,30 @@
                 const err = await resp.json();
                 throw new Error(err.error || `HTTP ${resp.status}`);
             }
-            const data = await resp.json();
-            renderDashboard(data);
+            allData = await resp.json();
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+
+            if (allData.updated_at) {
+                document.getElementById('updated-at').textContent =
+                    '데이터 갱신: ' + allData.updated_at;
+            }
+
+            // 탭 버튼 활성화/비활성화
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                const asset = btn.dataset.asset;
+                if (!allData[asset]) {
+                    btn.disabled = true;
+                    btn.style.opacity = '0.4';
+                    btn.style.cursor = 'not-allowed';
+                }
+            });
+
+            // 사용 가능한 첫 번째 자산으로 시작
+            const firstAvailable = ['gold', 'bitcoin', 'usdt'].find(a => allData[a]);
+            if (firstAvailable) {
+                switchTab(firstAvailable);
+            }
         } catch (e) {
             document.getElementById('loading').style.display = 'none';
             document.getElementById('error').style.display = 'block';
@@ -99,17 +161,49 @@
         }
     }
 
-    function renderDashboard(data) {
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('content').style.display = 'block';
+    function switchTab(asset) {
+        currentAsset = asset;
+        const config = ASSETS[asset];
+        const data = allData[asset];
 
-        // Updated time
-        if (data.updated_at) {
-            document.getElementById('updated-at').textContent =
-                '데이터 갱신: ' + data.updated_at;
+        if (!data) return;
+
+        // Update tab buttons
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.asset === asset);
+        });
+
+        // Update subtitle
+        document.getElementById('subtitle').textContent = config.label;
+
+        // Update cards
+        updateCards(data, config);
+
+        // Update chart titles
+        document.getElementById('price-chart-title').textContent =
+            config.label + ' 가격 비교 (' + config.unit + ')';
+        document.getElementById('table-title').textContent =
+            config.threshold + '% 이상 괴리율 발생 구간';
+        document.getElementById('high-gap-label').textContent =
+            config.threshold + '%+ 발생 횟수';
+
+        // Destroy existing charts
+        if (priceChartInstance) {
+            priceChartInstance.destroy();
+            priceChartInstance = null;
+        }
+        if (gapChartInstance) {
+            gapChartInstance.destroy();
+            gapChartInstance = null;
         }
 
-        // Summary cards
+        // Render charts
+        renderPriceChart(data, config);
+        renderGapChart(data, config);
+        renderTable(data.high_gap_periods, config);
+    }
+
+    function updateCards(data, config) {
         const lastGap = data.gap_pct[data.gap_pct.length - 1];
         const absGaps = data.gap_pct.map(Math.abs);
         const maxGapIdx = absGaps.indexOf(Math.max(...absGaps));
@@ -122,40 +216,47 @@
         document.getElementById('high-gap-count').textContent =
             data.high_gap_periods.length + '회';
 
-        // Color current gap
         const currentGapEl = document.getElementById('current-gap');
-        if (lastGap >= GAP_THRESHOLD) {
+        currentGapEl.classList.remove('high', 'low');
+        if (lastGap >= config.threshold) {
             currentGapEl.classList.add('high');
         } else if (lastGap < 0) {
             currentGapEl.classList.add('low');
         }
-
-        renderPriceChart(data);
-        renderGapChart(data);
-        renderTable(data.high_gap_periods);
     }
 
-    function renderPriceChart(data) {
+    function formatPrice(value, asset) {
+        const config = ASSETS[asset];
+        if (asset === 'gold') {
+            return Number(value).toLocaleString() + ' 원/g';
+        } else if (asset === 'bitcoin') {
+            return Number(value).toLocaleString() + ' 원';
+        } else {
+            return Number(value).toLocaleString() + ' 원';
+        }
+    }
+
+    function renderPriceChart(data, config) {
         const ctx = document.getElementById('priceChart').getContext('2d');
-        new Chart(ctx, {
+        priceChartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: data.dates,
                 datasets: [
                     {
-                        label: '국내 금 (KRX 금현물)',
+                        label: config.domesticLabel,
                         data: data.domestic_price,
-                        borderColor: '#e74c3c',
-                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        borderColor: config.domesticColor,
+                        backgroundColor: config.domesticColor + '1a',
                         borderWidth: 1.5,
                         pointRadius: 0,
                         fill: false,
                     },
                     {
-                        label: '국제 금 (COMEX, KRW 환산)',
+                        label: config.intlLabel,
                         data: data.intl_price,
-                        borderColor: '#3498db',
-                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderColor: config.intlColor,
+                        backgroundColor: config.intlColor + '1a',
                         borderWidth: 1.5,
                         pointRadius: 0,
                         fill: false,
@@ -177,7 +278,7 @@
                         },
                     },
                     y: {
-                        title: { display: true, text: 'KRW / g' },
+                        title: { display: true, text: config.unit },
                     },
                 },
                 plugins: {
@@ -185,7 +286,7 @@
                         callbacks: {
                             label: function(ctx) {
                                 return ctx.dataset.label + ': ' +
-                                    Number(ctx.parsed.y).toLocaleString() + ' 원/g';
+                                    formatPrice(ctx.parsed.y, currentAsset);
                             },
                         },
                     },
@@ -194,15 +295,15 @@
         });
     }
 
-    function buildHighlightBoxes(data) {
-        // Create annotation boxes for periods where gap >= threshold
+    function buildHighlightBoxes(data, config) {
         const boxes = {};
         let inRegion = false;
         let regionStart = null;
         let regionIdx = 0;
+        const threshold = config.threshold;
 
         for (let i = 0; i < data.gap_pct.length; i++) {
-            if (Math.abs(data.gap_pct[i]) >= GAP_THRESHOLD) {
+            if (Math.abs(data.gap_pct[i]) >= threshold) {
                 if (!inRegion) {
                     inRegion = true;
                     regionStart = data.dates[i];
@@ -213,7 +314,7 @@
                         type: 'box',
                         xMin: regionStart,
                         xMax: data.dates[i - 1],
-                        backgroundColor: 'rgba(231, 76, 60, 0.12)',
+                        backgroundColor: config.highlightColor,
                         borderWidth: 0,
                     };
                     regionIdx++;
@@ -226,28 +327,28 @@
                 type: 'box',
                 xMin: regionStart,
                 xMax: data.dates[data.dates.length - 1],
-                backgroundColor: 'rgba(231, 76, 60, 0.12)',
+                backgroundColor: config.highlightColor,
                 borderWidth: 0,
             };
         }
         return boxes;
     }
 
-    function renderGapChart(data) {
+    function renderGapChart(data, config) {
         const ctx = document.getElementById('gapChart').getContext('2d');
-        const highlightBoxes = buildHighlightBoxes(data);
+        const highlightBoxes = buildHighlightBoxes(data, config);
+        const threshold = config.threshold;
 
-        // Threshold line
         highlightBoxes['thresholdLine'] = {
             type: 'line',
-            yMin: GAP_THRESHOLD,
-            yMax: GAP_THRESHOLD,
+            yMin: threshold,
+            yMax: threshold,
             borderColor: 'rgba(231, 76, 60, 0.7)',
             borderWidth: 2,
             borderDash: [6, 4],
             label: {
                 display: true,
-                content: GAP_THRESHOLD + '%',
+                content: threshold + '%',
                 position: 'end',
                 backgroundColor: 'rgba(231, 76, 60, 0.8)',
                 color: '#fff',
@@ -255,17 +356,16 @@
             },
         };
 
-        // Negative threshold line
         highlightBoxes['negThresholdLine'] = {
             type: 'line',
-            yMin: -GAP_THRESHOLD,
-            yMax: -GAP_THRESHOLD,
+            yMin: -threshold,
+            yMax: -threshold,
             borderColor: 'rgba(41, 128, 185, 0.7)',
             borderWidth: 2,
             borderDash: [6, 4],
             label: {
                 display: true,
-                content: '-' + GAP_THRESHOLD + '%',
+                content: '-' + threshold + '%',
                 position: 'end',
                 backgroundColor: 'rgba(41, 128, 185, 0.8)',
                 color: '#fff',
@@ -273,7 +373,6 @@
             },
         };
 
-        // Zero line
         highlightBoxes['zeroLine'] = {
             type: 'line',
             yMin: 0,
@@ -282,7 +381,7 @@
             borderWidth: 1,
         };
 
-        new Chart(ctx, {
+        gapChartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: data.dates,
@@ -332,18 +431,25 @@
         });
     }
 
-    function renderTable(periods) {
+    function renderTable(periods, config) {
         const tbody = document.querySelector('#gapTable tbody');
+        tbody.innerHTML = '';
+
+        const noPeriods = document.getElementById('no-periods');
+        const table = document.getElementById('gapTable');
+
         if (!periods || periods.length === 0) {
-            document.getElementById('gapTable').style.display = 'none';
-            document.getElementById('no-periods').style.display = 'block';
+            table.style.display = 'none';
+            noPeriods.textContent = config.threshold + '% 이상 괴리율 발생 구간이 없습니다.';
+            noPeriods.style.display = 'block';
             return;
         }
 
-        // Sort by max_gap descending
-        periods.sort((a, b) => b.max_gap - a.max_gap);
+        table.style.display = '';
+        noPeriods.style.display = 'none';
 
-        periods.forEach(p => {
+        const sorted = [...periods].sort((a, b) => b.max_gap - a.max_gap);
+        sorted.forEach(p => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${p.start}</td>
@@ -355,7 +461,6 @@
         });
     }
 
-    // Load data on page load
     loadData();
     </script>
 </body>
