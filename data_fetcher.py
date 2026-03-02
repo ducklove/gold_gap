@@ -18,7 +18,6 @@ import pandas as pd
 import pyupbit
 import requests
 import yfinance as yf
-from pykrx import stock as pykrx_stock
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +25,7 @@ CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "all_data.json")
 TROY_OZ_TO_GRAM = 31.1035
 
-# KRX Gold Spot Price Index base price (2014-03-24 = 1000)
-DEFAULT_BASE_PRICE = 42300  # KRW/g
+NAVER_GOLD_PRICES_URL = "https://api.stock.naver.com/marketindex/metals/CMDT_GD/prices"
 
 # Asset-specific gap thresholds
 THRESHOLDS = {
@@ -80,75 +78,44 @@ def fetch_international_gold(fx_df):
     return intl
 
 
-def _get_pdf_gold_price(date_str):
-    """pykrx PDF에서 KRX 금현물 가격(KRW/g) 추출"""
-    try:
-        pdf = pykrx_stock.get_etf_portfolio_deposit_file("411060", date_str)
-        if pdf.empty:
-            return None
-        gold_row = pdf[pdf["구성종목명"].str.contains("금", na=False)]
-        if gold_row.empty:
-            return None
-        amount = gold_row["금액"].iloc[0]
-        contracts = gold_row["계약수"].iloc[0]
-        if contracts <= 0:
-            return None
-        return amount / contracts
-    except Exception as e:
-        logger.debug(f"PDF fetch failed for {date_str}: {e}")
-        return None
+def fetch_naver_gold(years=5):
+    """네이버 금융 API로 국내 금 가격(원/g) 조회"""
+    logger.info("Fetching domestic gold prices from Naver Finance...")
 
+    page_size = 60
+    target_start = datetime.now() - timedelta(days=years * 365)
+    rows = []
 
-def fetch_krx_gold():
-    """KRX 금현물 가격 조회 (ETF 기초지수 + PDF 보정)"""
-    end_str = datetime.now().strftime("%Y%m%d")
-    start_str = (datetime.now() - timedelta(days=5 * 365)).strftime("%Y%m%d")
+    for page in range(1, 200):
+        resp = requests.get(
+            NAVER_GOLD_PRICES_URL,
+            params={"page": page, "pageSize": page_size},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            break
 
-    logger.info("Fetching KRX gold ETF base index data...")
-    etf_df = pykrx_stock.get_etf_ohlcv_by_date(start_str, end_str, "411060")
+        for item in data:
+            dt = datetime.fromisoformat(item["localTradedAt"]).replace(tzinfo=None)
+            price = float(item["closePrice"].replace(",", ""))
+            rows.append({"date": dt.replace(hour=0, minute=0, second=0, microsecond=0), "domestic_price": price})
 
-    if etf_df.empty:
-        raise ValueError("Failed to fetch KRX gold ETF data")
+        oldest = datetime.fromisoformat(data[-1]["localTradedAt"])
+        if oldest.replace(tzinfo=None) < target_start:
+            break
+        time.sleep(0.1)
 
-    etf_df.index = pd.to_datetime(etf_df.index)
-    base_index = etf_df["기초지수"].copy()
-    base_index = base_index[base_index > 100]
+    if not rows:
+        raise ValueError("Failed to fetch Naver gold price data")
 
-    logger.info(f"ETF data: {len(base_index)} trading days")
-
-    # Sample PDF data for calibration (~every 20 trading days)
-    sample_interval = 20
-    sample_dates = base_index.index[::sample_interval].tolist()
-    if base_index.index[-1] not in sample_dates:
-        sample_dates.append(base_index.index[-1])
-
-    logger.info(f"Fetching {len(sample_dates)} PDF samples for calibration...")
-    calibration_points = {}
-    for dt in sample_dates:
-        date_str = dt.strftime("%Y%m%d")
-        price = _get_pdf_gold_price(date_str)
-        if price is not None and price > 0:
-            idx_val = base_index.loc[dt]
-            if idx_val > 100:
-                factor = price / idx_val
-                calibration_points[dt] = factor
-                logger.debug(f"  {date_str}: gold={price:.0f}, idx={idx_val:.2f}, factor={factor:.2f}")
-        time.sleep(0.3)
-
-    if not calibration_points:
-        logger.warning("No calibration points, using default factor")
-        factor_series = pd.Series(DEFAULT_BASE_PRICE / 1000, index=base_index.index)
-    else:
-        factor_df = pd.Series(calibration_points).sort_index()
-        factor_series = factor_df.reindex(base_index.index).interpolate(method="time")
-        factor_series = factor_series.ffill().bfill()
-
-    krx_gold = base_index * factor_series
-    result = pd.DataFrame({"domestic_price": krx_gold})
-    result = result.dropna()
+    result = pd.DataFrame(rows).set_index("date").sort_index()
+    result = result[~result.index.duplicated(keep="first")]
+    result = result[result.index >= target_start]
 
     logger.info(
-        f"KRX gold data: {len(result)} rows "
+        f"Naver gold data: {len(result)} rows "
         f"({result.index.min().strftime('%Y-%m-%d')} ~ {result.index.max().strftime('%Y-%m-%d')})"
     )
     return result
@@ -299,7 +266,7 @@ def get_gold_data(fx_df):
     """금 자산 오케스트레이터"""
     logger.info("=== Fetching GOLD data ===")
     intl_df = fetch_international_gold(fx_df)
-    domestic_df = fetch_krx_gold()
+    domestic_df = fetch_naver_gold()
     merged = calculate_gap(intl_df, domestic_df)
     periods = find_high_gap_periods(merged, threshold=THRESHOLDS["gold"])
     return serialize_asset_data(merged, periods)

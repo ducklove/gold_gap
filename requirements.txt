@@ -2,6 +2,5 @@ flask
 yfinance
 pandas
 requests
-pykrx
 numpy
 pyupbit
