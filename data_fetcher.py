@@ -25,7 +25,9 @@ CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "all_data.json")
 TROY_OZ_TO_GRAM = 31.1035
 
-NAVER_GOLD_PRICES_URL = "https://api.stock.naver.com/marketindex/metals/CMDT_GD/prices"
+NAVER_ETF_BASIC_URL = "https://m.stock.naver.com/api/etf/{code}/basic"
+KRX_GOLD_ETF = "411060"
+KRX_GOLD_ETF_CU_SIZE = 100_000  # 1 CU = 100,000 좌
 
 # Asset-specific gap thresholds
 THRESHOLDS = {
@@ -78,45 +80,51 @@ def fetch_international_gold(fx_df):
     return intl
 
 
-def fetch_naver_gold(years=5):
-    """네이버 금융 API로 국내 금 가격(원/g) 조회"""
-    logger.info("Fetching domestic gold prices from Naver Finance...")
+def _get_gold_grams_per_unit():
+    """네이버 ETF API에서 411060 CU 구성을 조회하여 1좌당 금 그램수 계산"""
+    resp = requests.get(
+        NAVER_ETF_BASIC_URL.format(code=KRX_GOLD_ETF),
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
 
-    page_size = 60
-    target_start = datetime.now() - timedelta(days=years * 365)
-    rows = []
+    for item in data.get("constituentList", []):
+        if "금" in item.get("itemName", ""):
+            cu_grams = item["cuUnitQuantity"]
+            grams_per_unit = cu_grams / KRX_GOLD_ETF_CU_SIZE
+            logger.info(f"ETF CU gold: {cu_grams}g / {KRX_GOLD_ETF_CU_SIZE} units = {grams_per_unit:.4f} g/unit")
+            return grams_per_unit
 
-    for page in range(1, 200):
-        resp = requests.get(
-            NAVER_GOLD_PRICES_URL,
-            params={"page": page, "pageSize": page_size},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if not data:
-            break
+    raise ValueError("Gold constituent not found in ETF CU data")
 
-        for item in data:
-            dt = datetime.fromisoformat(item["localTradedAt"]).replace(tzinfo=None)
-            price = float(item["closePrice"].replace(",", ""))
-            rows.append({"date": dt.replace(hour=0, minute=0, second=0, microsecond=0), "domestic_price": price})
 
-        oldest = datetime.fromisoformat(data[-1]["localTradedAt"])
-        if oldest.replace(tzinfo=None) < target_start:
-            break
-        time.sleep(0.1)
+def fetch_krx_gold():
+    """411060 ETF(ACE KRX금현물) 시세로 국내 금 가격(원/g) 산출"""
+    grams_per_unit = _get_gold_grams_per_unit()
 
-    if not rows:
-        raise ValueError("Failed to fetch Naver gold price data")
+    end = datetime.now()
+    start = end - timedelta(days=5 * 365)
 
-    result = pd.DataFrame(rows).set_index("date").sort_index()
-    result = result[~result.index.duplicated(keep="first")]
-    result = result[result.index >= target_start]
+    logger.info("Fetching KRX gold ETF (411060.KS) via yfinance...")
+    etf = yf.download(KRX_GOLD_ETF + ".KS", start=start, end=end, progress=False)
+
+    if etf.empty:
+        raise ValueError("Failed to fetch 411060.KS data")
+
+    if isinstance(etf.columns, pd.MultiIndex):
+        etf.columns = etf.columns.get_level_values(0)
+
+    etf.index = pd.to_datetime(etf.index).tz_localize(None)
+    domestic_price = etf["Close"] / grams_per_unit
+
+    result = pd.DataFrame({"domestic_price": domestic_price}).dropna()
 
     logger.info(
-        f"Naver gold data: {len(result)} rows "
-        f"({result.index.min().strftime('%Y-%m-%d')} ~ {result.index.max().strftime('%Y-%m-%d')})"
+        f"KRX gold data: {len(result)} rows "
+        f"({result.index.min().strftime('%Y-%m-%d')} ~ {result.index.max().strftime('%Y-%m-%d')}), "
+        f"factor={1/grams_per_unit:.2f} KRW·unit/g"
     )
     return result
 
@@ -266,7 +274,7 @@ def get_gold_data(fx_df):
     """금 자산 오케스트레이터"""
     logger.info("=== Fetching GOLD data ===")
     intl_df = fetch_international_gold(fx_df)
-    domestic_df = fetch_naver_gold()
+    domestic_df = fetch_krx_gold()
     merged = calculate_gap(intl_df, domestic_df)
     periods = find_high_gap_periods(merged, threshold=THRESHOLDS["gold"])
     return serialize_asset_data(merged, periods)
