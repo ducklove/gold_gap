@@ -205,9 +205,15 @@
             data.high_gap_periods.length + '회';
 
         const el = document.getElementById('current-gap');
+        const card = el.closest('.card');
         el.classList.remove('high', 'low');
-        if (lastGap >= config.threshold) el.classList.add('high');
-        else if (lastGap < 0) el.classList.add('low');
+        card.classList.remove('alert');
+        if (Math.abs(lastGap) >= config.threshold) {
+            el.classList.add('high');
+            card.classList.add('alert');
+        } else if (lastGap < 0) {
+            el.classList.add('low');
+        }
     }
 
     function formatPrice(value, asset) {

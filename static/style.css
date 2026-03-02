@@ -231,6 +231,15 @@ header h1 {
     color: var(--positive);
 }
 
+.card.alert {
+    animation: alert-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes alert-pulse {
+    0%, 100% { border-color: var(--border); }
+    50% { border-color: var(--negative); box-shadow: 0 0 12px rgba(246, 70, 93, 0.3); }
+}
+
 /* Charts */
 .chart-container {
     background: var(--bg-card);
