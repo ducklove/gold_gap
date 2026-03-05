@@ -223,6 +223,17 @@ header h1 {
     color: var(--text-primary);
 }
 
+.card-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.cards-secondary .card-value {
+    font-size: 1.2rem;
+}
+
 .card-value.high {
     color: var(--negative);
 }

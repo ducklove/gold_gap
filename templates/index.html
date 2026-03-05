@@ -51,6 +51,29 @@
                 </div>
             </div>
 
+            <div class="cards cards-secondary" id="gold-detail-cards" style="display:none;">
+                <div class="card">
+                    <div class="card-label">기준환율</div>
+                    <div class="card-value" id="usd-krw">-</div>
+                    <div class="card-sub" id="usd-krw-sub"></div>
+                </div>
+                <div class="card">
+                    <div class="card-label">국내가격 (원/g)</div>
+                    <div class="card-value" id="domestic-krw">-</div>
+                    <div class="card-sub" id="domestic-krw-sub"></div>
+                </div>
+                <div class="card">
+                    <div class="card-label">국제가격 ($/oz)</div>
+                    <div class="card-value" id="intl-usd-oz">-</div>
+                    <div class="card-sub" id="intl-usd-oz-sub"></div>
+                </div>
+                <div class="card">
+                    <div class="card-label">일간 변동률 (국제)</div>
+                    <div class="card-value" id="daily-change">-</div>
+                    <div class="card-sub" id="daily-change-sub"></div>
+                </div>
+            </div>
+
             <div class="chart-container">
                 <h2 id="price-chart-title">가격 비교</h2>
                 <canvas id="priceChart"></canvas>
@@ -191,6 +214,8 @@
         renderTable(data.high_gap_periods, config);
     }
 
+    const TROY_OZ_TO_GRAM = 31.1035;
+
     function updateCards(data, config) {
         const lastGap = data.gap_pct[data.gap_pct.length - 1];
         const absGaps = data.gap_pct.map(Math.abs);
@@ -213,6 +238,43 @@
             card.classList.add('alert');
         } else if (lastGap < 0) {
             el.classList.add('low');
+        }
+
+        const goldDetailCards = document.getElementById('gold-detail-cards');
+        if (currentAsset === 'gold') {
+            goldDetailCards.style.display = '';
+            updateGoldDetailCards(data);
+        } else {
+            goldDetailCards.style.display = 'none';
+        }
+    }
+
+    function updateGoldDetailCards(data) {
+        const n = data.dates.length;
+        const lastUsdKrw = data.usd_krw[n - 1];
+        const lastDomestic = data.domestic_price[n - 1];
+        const lastIntl = data.intl_price[n - 1];
+        const lastUsdOz = lastIntl * TROY_OZ_TO_GRAM / lastUsdKrw;
+
+        document.getElementById('usd-krw').textContent =
+            lastUsdKrw.toLocaleString('ko-KR', { maximumFractionDigits: 2 }) + ' 원';
+
+        document.getElementById('domestic-krw').textContent =
+            lastDomestic.toLocaleString('ko-KR', { maximumFractionDigits: 0 }) + ' 원';
+
+        document.getElementById('intl-usd-oz').textContent =
+            '$' + lastUsdOz.toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+        if (n >= 2) {
+            const prevIntl = data.intl_price[n - 2];
+            const prevUsdKrw = data.usd_krw[n - 2];
+            const prevUsdOz = prevIntl * TROY_OZ_TO_GRAM / prevUsdKrw;
+            const dailyChg = ((lastUsdOz - prevUsdOz) / prevUsdOz) * 100;
+            const sign = dailyChg >= 0 ? '+' : '';
+            const chgEl = document.getElementById('daily-change');
+            chgEl.textContent = sign + dailyChg.toFixed(2) + '%';
+            chgEl.classList.remove('high', 'low');
+            chgEl.classList.add(dailyChg >= 0 ? 'low' : 'high');
         }
     }
 
