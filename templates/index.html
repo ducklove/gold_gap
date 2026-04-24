@@ -176,7 +176,8 @@
                 }
             });
 
-            const firstAvailable = ['gold', 'bitcoin', 'usdt'].find(a => allData[a]);
+            const requestedAsset = getRequestedAsset();
+            const firstAvailable = [requestedAsset, 'gold', 'bitcoin', 'usdt'].find(a => a && allData[a]);
             if (firstAvailable) switchTab(firstAvailable);
         } catch (e) {
             document.getElementById('loading').style.display = 'none';
@@ -186,11 +187,20 @@
         }
     }
 
+    function getRequestedAsset() {
+        const asset = new URLSearchParams(window.location.search).get('asset');
+        return ASSETS[asset] ? asset : '';
+    }
+
     function switchTab(asset) {
         currentAsset = asset;
         const config = ASSETS[asset];
         const data = allData[asset];
         if (!data) return;
+
+        const url = new URL(window.location.href);
+        url.searchParams.set('asset', asset);
+        window.history.replaceState(null, '', url);
 
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.asset === asset);
