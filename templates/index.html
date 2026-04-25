@@ -39,6 +39,7 @@
                     <div class="asset-kicker">Spread Monitor</div>
                     <h2 class="asset-title" id="asset-title">GOLD · BITCOIN · USDT</h2>
                     <p class="asset-summary" id="asset-summary">국내 거래가와 환산 국제가의 차이를 추적합니다.</p>
+                    <p class="source-note" id="source-note"></p>
                 </div>
                 <div class="tab-nav" role="tablist" aria-label="자산 선택">
                     <button class="tab-btn active" data-asset="gold" role="tab" aria-selected="true" onclick="switchTab('gold')">GOLD</button>
@@ -89,20 +90,24 @@
                     <div class="card-sub" id="domestic-krw-sub"></div>
                 </div>
                 <div class="card">
-                    <div class="card-label">국제가격 ($/oz)</div>
-                    <div class="card-value" id="intl-usd-oz">-</div>
-                    <div class="card-sub" id="intl-usd-oz-sub"></div>
+                    <div class="card-label">런던 현물 ($/oz)</div>
+                    <div class="card-value" id="london-usd-oz">-</div>
+                    <div class="card-sub" id="london-usd-oz-sub">WGC/ICE spot</div>
                 </div>
                 <div class="card">
-                    <div class="card-label">일간 변동률 (국제)</div>
-                    <div class="card-value" id="daily-change">-</div>
-                    <div class="card-sub" id="daily-change-sub"></div>
+                    <div class="card-label">뉴욕선물 ($/oz)</div>
+                    <div class="card-value" id="ny-usd-oz">-</div>
+                    <div class="card-sub" id="ny-usd-oz-sub">COMEX GC=F</div>
                 </div>
             </div>
 
             <section class="chart-container">
                 <div class="section-header">
                     <h2 id="price-chart-title">가격 비교</h2>
+                    <div class="mode-toggle" id="gold-source-toggle" role="group" aria-label="금 국제가격 기준 선택" hidden>
+                        <button type="button" class="mode-btn" data-gold-mode="london_spot">런던 현물</button>
+                        <button type="button" class="mode-btn active" data-gold-mode="ny_futures">뉴욕선물</button>
+                    </div>
                 </div>
                 <canvas id="priceChart"></canvas>
             </section>
@@ -149,37 +154,52 @@
             label: 'Gold',
             summary: 'KRX 금현물과 COMEX 금 가격을 원화 기준으로 비교합니다.',
             domesticLabel: '국내 (KRX 금현물)',
-            intlLabel: '국제 (COMEX, KRW 환산)',
+            intlLabel: '뉴욕선물 GC=F (KRW 환산)',
             unit: 'KRW/g',
             threshold: 5,
             domesticColor: '#d9a441',
             intlColor: '#2a78c9',
             gapColor: '#d9a441',
             highlightColor: 'rgba(217, 164, 65, 0.12)',
+            sourceSummary: '국내: ACE KRX금현물 411060.KS · 환율: USD/KRW KRW=X · 국제 기준은 토글로 선택',
+            intlModes: {
+                london_spot: {
+                    label: '런던 현물',
+                    intlLabel: '런던 현물 XAU/USD (KRW 환산)',
+                    sourceSummary: '국제: World Gold Council/ICE spot + Gold API latest XAU',
+                },
+                ny_futures: {
+                    label: '뉴욕선물',
+                    intlLabel: '뉴욕선물 GC=F (KRW 환산)',
+                    sourceSummary: '국제: COMEX Gold Futures GC=F (Yahoo Finance)',
+                },
+            },
         },
         bitcoin: {
             label: 'Bitcoin',
-            summary: '업비트 BTC와 국제 BTC 환산가의 프리미엄을 추적합니다.',
+            summary: '업비트 BTC와 BTC-USD 국제가의 프리미엄을 추적합니다.',
             domesticLabel: '업비트 BTC',
-            intlLabel: 'BTC 국제가 (KRW 환산)',
+            intlLabel: 'BTC-USD (KRW 환산)',
             unit: 'KRW',
             threshold: 5,
             domesticColor: '#d9791f',
             intlColor: '#2a78c9',
             gapColor: '#d9791f',
             highlightColor: 'rgba(217, 121, 31, 0.12)',
+            sourceSummary: '국내: Upbit KRW-BTC · 국제: BTC-USD (Yahoo Finance) · 환율: USD/KRW KRW=X',
         },
         usdt: {
             label: 'USDT',
-            summary: '업비트 USDT와 기준환율 간의 괴리율을 확인합니다.',
-            domesticLabel: '업비트 USDT',
-            intlLabel: 'USDT 국제가 (KRW 환산)',
+            summary: '빗썸 USDT/KRW와 USDT-USD 환산 기준의 괴리율을 확인합니다.',
+            domesticLabel: '빗썸 USDT',
+            intlLabel: 'USDT-USD (KRW 환산)',
             unit: 'KRW',
             threshold: 3,
             domesticColor: '#1f9b57',
             intlColor: '#2a78c9',
             gapColor: '#1f9b57',
             highlightColor: 'rgba(31, 155, 87, 0.12)',
+            sourceSummary: '국내: Bithumb USDT_KRW · 국제: USDT-USD (Yahoo Finance) · 환율: USD/KRW KRW=X',
         },
     };
 
@@ -188,6 +208,7 @@
     let priceChartInstance = null;
     let gapChartInstance = null;
     let refreshInFlight = false;
+    let currentGoldIntlMode = 'ny_futures';
 
     function getThemeColor(name) {
         return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -260,6 +281,8 @@
             });
 
             const requestedAsset = getRequestedAsset();
+            const requestedGoldMode = getRequestedGoldMode();
+            if (requestedGoldMode) currentGoldIntlMode = requestedGoldMode;
             const firstAvailable = [requestedAsset, currentAsset, 'gold', 'bitcoin', 'usdt'].find(a => a && allData[a]);
             if (firstAvailable) switchTab(firstAvailable);
         } catch (e) {
@@ -280,19 +303,73 @@
         return ASSETS[asset] ? asset : '';
     }
 
+    function getRequestedGoldMode() {
+        const mode = new URLSearchParams(window.location.search).get('gold_source');
+        return ASSETS.gold.intlModes[mode] ? mode : '';
+    }
+
+    function getActiveAssetData(data, config) {
+        if (currentAsset !== 'gold' || !data.intl_modes) return data;
+        return data.intl_modes[currentGoldIntlMode] || data.intl_modes[data.default_intl_mode] || data;
+    }
+
+    function getActiveChartConfig(config) {
+        if (currentAsset !== 'gold') return config;
+        const modeConfig = config.intlModes[currentGoldIntlMode];
+        return {
+            ...config,
+            intlLabel: modeConfig ? modeConfig.intlLabel : config.intlLabel,
+        };
+    }
+
+    function latestValue(data, key) {
+        const values = data && data[key];
+        if (!values || values.length === 0) return null;
+        return values[values.length - 1];
+    }
+
+    function updateGoldModeToggle() {
+        const toggle = document.getElementById('gold-source-toggle');
+        if (!toggle) return;
+        toggle.hidden = currentAsset !== 'gold';
+        toggle.querySelectorAll('.mode-btn').forEach(btn => {
+            const active = btn.dataset.goldMode === currentGoldIntlMode;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+    }
+
+    function updateSourceNote(data, config) {
+        const note = document.getElementById('source-note');
+        if (!note) return;
+        if (currentAsset === 'gold') {
+            const modeConfig = config.intlModes[currentGoldIntlMode];
+            note.textContent = [config.sourceSummary, modeConfig && modeConfig.sourceSummary].filter(Boolean).join(' · ');
+            return;
+        }
+        note.textContent = config.sourceSummary || '';
+    }
+
     function switchTab(asset) {
         currentAsset = asset;
         const config = ASSETS[asset];
         const data = allData && allData[asset];
         if (!data) return;
+        const activeData = getActiveAssetData(data, config);
+        const chartConfig = getActiveChartConfig(config);
 
         const url = new URL(window.location.href);
         url.searchParams.set('asset', asset);
+        if (asset === 'gold') {
+            url.searchParams.set('gold_source', currentGoldIntlMode);
+        }
         window.history.replaceState(null, '', url);
 
         document.documentElement.style.setProperty('--asset-color', config.gapColor);
         document.getElementById('asset-title').textContent = config.label;
         document.getElementById('asset-summary').textContent = config.summary;
+        updateSourceNote(data, config);
+        updateGoldModeToggle();
 
         document.querySelectorAll('.tab-btn').forEach(btn => {
             const isActive = btn.dataset.asset === asset;
@@ -300,27 +377,28 @@
             btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
 
-        updateCards(data, config);
+        updateCards(data, config, activeData);
 
         document.getElementById('price-chart-title').textContent =
-            config.label + ' 가격 비교 (' + config.unit + ')';
+            config.label + ' 가격 비교 (' + chartConfig.unit + ')';
         document.getElementById('table-title').textContent =
-            config.threshold + '% 이상 괴리율 발생 구간';
+            chartConfig.threshold + '% 이상 괴리율 발생 구간';
         document.getElementById('high-gap-label').textContent =
-            config.threshold + '%+ 발생';
+            chartConfig.threshold + '%+ 발생';
 
         if (priceChartInstance) { priceChartInstance.destroy(); priceChartInstance = null; }
         if (gapChartInstance) { gapChartInstance.destroy(); gapChartInstance = null; }
 
         applyChartDefaults();
-        renderPriceChart(data, config);
-        renderGapChart(data, config);
-        renderTable(data.high_gap_periods, config);
+        renderPriceChart(activeData, chartConfig);
+        renderGapChart(activeData, chartConfig);
+        renderTable(activeData.high_gap_periods, chartConfig);
     }
 
     const TROY_OZ_TO_GRAM = 31.1035;
 
-    function updateCards(data, config) {
+    function updateCards(data, config, activeData) {
+        data = activeData || data;
         const lastGap = data.gap_pct[data.gap_pct.length - 1];
         const absGaps = data.gap_pct.map(Math.abs);
         const maxGapIdx = absGaps.indexOf(Math.max(...absGaps));
@@ -347,18 +425,17 @@
         const goldDetailCards = document.getElementById('gold-detail-cards');
         if (currentAsset === 'gold') {
             goldDetailCards.style.display = '';
-            updateGoldDetailCards(data);
+            updateGoldDetailCards(allData.gold, data);
         } else {
             goldDetailCards.style.display = 'none';
         }
     }
 
-    function updateGoldDetailCards(data) {
-        const n = data.dates.length;
-        const lastUsdKrw = data.usd_krw[n - 1];
-        const lastDomestic = data.domestic_price[n - 1];
-        const lastIntl = data.intl_price[n - 1];
-        const lastUsdOz = lastIntl * TROY_OZ_TO_GRAM / lastUsdKrw;
+    function updateGoldDetailCards(goldData, activeData) {
+        const lastUsdKrw = latestValue(activeData, 'usd_krw');
+        const lastDomestic = latestValue(activeData, 'domestic_price');
+        const londonUsdOz = latestValue(goldData.intl_modes && goldData.intl_modes.london_spot, 'gold_usd_oz');
+        const nyUsdOz = latestValue(goldData.intl_modes && goldData.intl_modes.ny_futures, 'gold_usd_oz');
 
         document.getElementById('usd-krw').textContent =
             lastUsdKrw.toLocaleString('ko-KR', { maximumFractionDigits: 2 }) + ' 원';
@@ -366,20 +443,11 @@
         document.getElementById('domestic-krw').textContent =
             lastDomestic.toLocaleString('ko-KR', { maximumFractionDigits: 0 }) + ' 원';
 
-        document.getElementById('intl-usd-oz').textContent =
-            '$' + lastUsdOz.toLocaleString('en-US', { maximumFractionDigits: 2 });
+        document.getElementById('london-usd-oz').textContent =
+            londonUsdOz == null ? '-' : '$' + Number(londonUsdOz).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
-        if (n >= 2) {
-            const prevIntl = data.intl_price[n - 2];
-            const prevUsdKrw = data.usd_krw[n - 2];
-            const prevUsdOz = prevIntl * TROY_OZ_TO_GRAM / prevUsdKrw;
-            const dailyChg = ((lastUsdOz - prevUsdOz) / prevUsdOz) * 100;
-            const sign = dailyChg >= 0 ? '+' : '';
-            const chgEl = document.getElementById('daily-change');
-            chgEl.textContent = sign + dailyChg.toFixed(2) + '%';
-            chgEl.classList.remove('high', 'low');
-            chgEl.classList.add(dailyChg >= 0 ? 'low' : 'high');
-        }
+        document.getElementById('ny-usd-oz').textContent =
+            nyUsdOz == null ? '-' : '$' + Number(nyUsdOz).toLocaleString('en-US', { maximumFractionDigits: 2 });
     }
 
     function formatPrice(value, asset) {
@@ -646,9 +714,19 @@
         refreshBtn.addEventListener('click', () => loadData({ showLoading: false, bustCache: true }));
     }
 
+    function bindGoldModeButtons() {
+        document.querySelectorAll('[data-gold-mode]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentGoldIntlMode = btn.dataset.goldMode;
+                if (allData && allData.gold) switchTab('gold');
+            });
+        });
+    }
+
     applyChartDefaults();
     bindThemeButton();
     bindRefreshButton();
+    bindGoldModeButtons();
     loadData();
     </script>
 </body>

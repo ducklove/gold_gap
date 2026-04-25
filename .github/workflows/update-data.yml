@@ -2,7 +2,7 @@ name: Update data.json
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 매일 KST 09:00 (UTC 00:00)
+    - cron: '*/30 * * * *'  # 정적 배포 지연을 줄이기 위해 30분마다 최신 quote 반영
   workflow_dispatch:
 
 permissions:

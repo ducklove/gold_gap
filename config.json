@@ -7,21 +7,21 @@
     "gold": {
       "label": "Gold",
       "domesticLabel": "KRX gold spot",
-      "internationalLabel": "COMEX gold converted to KRW",
+      "internationalLabel": "COMEX gold futures or WGC/ICE gold spot converted to KRW",
       "portfolioCodes": ["KRX_GOLD"],
       "thresholdPct": 5.0
     },
     "bitcoin": {
       "label": "Bitcoin",
       "domesticLabel": "Upbit BTC",
-      "internationalLabel": "BTC converted to KRW",
+      "internationalLabel": "BTC-USD converted to KRW",
       "portfolioCodes": ["CRYPTO_BTC"],
       "thresholdPct": 5.0
     },
     "usdt": {
       "label": "USDT",
-      "domesticLabel": "Upbit USDT",
-      "internationalLabel": "USDT converted to KRW",
+      "domesticLabel": "Bithumb USDT",
+      "internationalLabel": "USDT-USD converted to KRW",
       "portfolioCodes": [],
       "thresholdPct": 3.0
     }
