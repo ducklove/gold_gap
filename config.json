@@ -1,0 +1,29 @@
+{
+  "projectKey": "goldGap",
+  "name": "Gold Gap",
+  "baseUrl": "https://ducklove.github.io/gold_gap",
+  "dataUrl": "https://ducklove.github.io/gold_gap/data.json",
+  "assets": {
+    "gold": {
+      "label": "Gold",
+      "domesticLabel": "KRX gold spot",
+      "internationalLabel": "COMEX gold converted to KRW",
+      "portfolioCodes": ["KRX_GOLD"],
+      "thresholdPct": 5.0
+    },
+    "bitcoin": {
+      "label": "Bitcoin",
+      "domesticLabel": "Upbit BTC",
+      "internationalLabel": "BTC converted to KRW",
+      "portfolioCodes": ["CRYPTO_BTC"],
+      "thresholdPct": 5.0
+    },
+    "usdt": {
+      "label": "USDT",
+      "domesticLabel": "Upbit USDT",
+      "internationalLabel": "USDT converted to KRW",
+      "portfolioCodes": [],
+      "thresholdPct": 3.0
+    }
+  }
+}

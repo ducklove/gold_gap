@@ -25,6 +25,7 @@ jobs:
           mkdir -p _site/static
           cp templates/index.html _site/index.html
           cp static/style.css _site/static/style.css
+          cp config.json _site/config.json
           cp data.json _site/data.json
 
       - name: Upload artifact
