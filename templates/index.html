@@ -1,26 +1,52 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>김치프리미엄 대시보드</title>
+    <script>
+    (function() {
+        try {
+            var theme = localStorage.getItem('theme') || localStorage.getItem('preferred-theme') || 'light';
+            document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+        } catch (e) {
+            document.documentElement.dataset.theme = 'light';
+        }
+    })();
+    </script>
     <link rel="stylesheet" href="static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>김치프리미엄 대시보드</h1>
-            <p class="subtitle" id="subtitle">GOLD &middot; BITCOIN &middot; USDT</p>
-            <p class="updated-at" id="updated-at"></p>
-        </header>
-
-        <div class="tab-nav">
-            <button class="tab-btn active" data-asset="gold" onclick="switchTab('gold')">GOLD</button>
-            <button class="tab-btn" data-asset="bitcoin" onclick="switchTab('bitcoin')">BITCOIN</button>
-            <button class="tab-btn" data-asset="usdt" onclick="switchTab('usdt')">USDT</button>
+    <div class="header">
+        <div class="header-row">
+            <div>
+                <h1>김치프리미엄 대시보드</h1>
+                <div class="updated" id="updated-at"></div>
+            </div>
+            <div class="header-actions">
+                <button type="button" class="refresh-btn" id="refreshBtn">새로고침</button>
+                <button type="button" class="theme-toggle" id="themeToggle" title="테마 전환" aria-label="테마 전환">◐</button>
+            </div>
         </div>
+    </div>
+
+    <main class="container">
+        <section class="asset-overview">
+            <div class="asset-overview-header">
+                <div>
+                    <div class="asset-kicker">Spread Monitor</div>
+                    <h2 class="asset-title" id="asset-title">GOLD · BITCOIN · USDT</h2>
+                    <p class="asset-summary" id="asset-summary">국내 거래가와 환산 국제가의 차이를 추적합니다.</p>
+                </div>
+                <div class="tab-nav" role="tablist" aria-label="자산 선택">
+                    <button class="tab-btn active" data-asset="gold" role="tab" aria-selected="true" onclick="switchTab('gold')">GOLD</button>
+                    <button class="tab-btn" data-asset="bitcoin" role="tab" aria-selected="false" onclick="switchTab('bitcoin')">BITCOIN</button>
+                    <button class="tab-btn" data-asset="usdt" role="tab" aria-selected="false" onclick="switchTab('usdt')">USDT</button>
+                </div>
+            </div>
+        </section>
 
         <div id="loading">
             <div class="spinner"></div>
@@ -74,77 +100,86 @@
                 </div>
             </div>
 
-            <div class="chart-container">
-                <h2 id="price-chart-title">가격 비교</h2>
+            <section class="chart-container">
+                <div class="section-header">
+                    <h2 id="price-chart-title">가격 비교</h2>
+                </div>
                 <canvas id="priceChart"></canvas>
-            </div>
+            </section>
 
-            <div class="chart-container">
-                <h2>괴리율 추이 (%)</h2>
+            <section class="chart-container">
+                <div class="section-header">
+                    <h2>괴리율 추이 (%)</h2>
+                </div>
                 <canvas id="gapChart"></canvas>
-            </div>
+            </section>
 
-            <div class="table-container">
-                <h2 id="table-title">괴리율 발생 구간</h2>
-                <table id="gapTable">
-                    <thead>
-                        <tr>
-                            <th>시작일</th>
-                            <th>종료일</th>
-                            <th>최대 괴리율</th>
-                            <th>지속일수</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+            <section class="table-container">
+                <div class="section-header">
+                    <h2 id="table-title">괴리율 발생 구간</h2>
+                </div>
+                <div class="table-scroll">
+                    <table id="gapTable">
+                        <thead>
+                            <tr>
+                                <th>시작일</th>
+                                <th>종료일</th>
+                                <th>최대 괴리율</th>
+                                <th>지속일수</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
                 <p id="no-periods" style="display:none; text-align:center;"></p>
-            </div>
+            </section>
         </div>
 
         <div class="footer">
             데이터 출처: KRX, COMEX, Upbit, yfinance
         </div>
-    </div>
+    </main>
 
     <script>
-    /* ── Chart.js 다크 테마 글로벌 설정 ── */
-    Chart.defaults.color = '#9aa0b0';
-    Chart.defaults.borderColor = 'rgba(42, 45, 58, 0.8)';
-    Chart.defaults.font.family = "'Inter', sans-serif";
+    const THEME_STORAGE_KEY = 'theme';
+    let currentTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
 
     const ASSETS = {
         gold: {
             label: 'Gold',
+            summary: 'KRX 금현물과 COMEX 금 가격을 원화 기준으로 비교합니다.',
             domesticLabel: '국내 (KRX 금현물)',
             intlLabel: '국제 (COMEX, KRW 환산)',
             unit: 'KRW/g',
             threshold: 5,
-            domesticColor: '#f0b90b',
-            intlColor: '#4a90d9',
-            gapColor: '#f0b90b',
-            highlightColor: 'rgba(240, 185, 11, 0.08)',
+            domesticColor: '#d9a441',
+            intlColor: '#2a78c9',
+            gapColor: '#d9a441',
+            highlightColor: 'rgba(217, 164, 65, 0.12)',
         },
         bitcoin: {
             label: 'Bitcoin',
+            summary: '업비트 BTC와 국제 BTC 환산가의 프리미엄을 추적합니다.',
             domesticLabel: '업비트 BTC',
             intlLabel: 'BTC 국제가 (KRW 환산)',
             unit: 'KRW',
             threshold: 5,
-            domesticColor: '#f7931a',
-            intlColor: '#4a90d9',
-            gapColor: '#f7931a',
-            highlightColor: 'rgba(247, 147, 26, 0.08)',
+            domesticColor: '#d9791f',
+            intlColor: '#2a78c9',
+            gapColor: '#d9791f',
+            highlightColor: 'rgba(217, 121, 31, 0.12)',
         },
         usdt: {
             label: 'USDT',
+            summary: '업비트 USDT와 기준환율 간의 괴리율을 확인합니다.',
             domesticLabel: '업비트 USDT',
             intlLabel: 'USDT 국제가 (KRW 환산)',
             unit: 'KRW',
             threshold: 3,
-            domesticColor: '#26a17b',
-            intlColor: '#4a90d9',
-            gapColor: '#26a17b',
-            highlightColor: 'rgba(38, 161, 123, 0.08)',
+            domesticColor: '#1f9b57',
+            intlColor: '#2a78c9',
+            gapColor: '#1f9b57',
+            highlightColor: 'rgba(31, 155, 87, 0.12)',
         },
     };
 
@@ -152,38 +187,91 @@
     let currentAsset = 'gold';
     let priceChartInstance = null;
     let gapChartInstance = null;
+    let refreshInFlight = false;
 
-    async function loadData() {
+    function getThemeColor(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function getChartTheme() {
+        return {
+            text: getThemeColor('--text'),
+            textDim: getThemeColor('--text-dim'),
+            grid: getThemeColor('--grid'),
+            surface: getThemeColor('--surface'),
+            surface2: getThemeColor('--surface2'),
+            border: getThemeColor('--border'),
+            up: getThemeColor('--up'),
+            down: getThemeColor('--down'),
+        };
+    }
+
+    function applyChartDefaults() {
+        const theme = getChartTheme();
+        Chart.defaults.color = theme.textDim;
+        Chart.defaults.borderColor = theme.grid;
+        Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    }
+
+    function setRefreshButtonState(isBusy) {
+        refreshInFlight = isBusy;
+        const refreshBtn = document.getElementById('refreshBtn');
+        if (!refreshBtn) return;
+        refreshBtn.disabled = isBusy;
+        refreshBtn.classList.toggle('is-refreshing', isBusy);
+        refreshBtn.textContent = isBusy ? '새로고침 중...' : '새로고침';
+    }
+
+    async function loadData({ showLoading = true, bustCache = false } = {}) {
+        if (refreshInFlight) return;
+        setRefreshButtonState(true);
+        document.getElementById('error').style.display = 'none';
+
+        if (showLoading && !allData) {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('content').style.display = 'none';
+        }
+
         try {
-            const resp = await fetch('data.json');
+            const url = bustCache ? 'data.json?t=' + Date.now() : 'data.json';
+            const resp = await fetch(url);
             if (!resp.ok) {
-                const err = await resp.json();
+                let err = {};
+                try {
+                    err = await resp.json();
+                } catch (e) {
+                    err = {};
+                }
                 throw new Error(err.error || `HTTP ${resp.status}`);
             }
+
             allData = await resp.json();
             document.getElementById('loading').style.display = 'none';
             document.getElementById('content').style.display = 'block';
 
             if (allData.updated_at) {
                 document.getElementById('updated-at').textContent =
-                    'Last updated: ' + allData.updated_at;
+                    '최종 업데이트: ' + allData.updated_at;
             }
 
             document.querySelectorAll('.tab-btn').forEach(btn => {
                 const asset = btn.dataset.asset;
-                if (!allData[asset]) {
-                    btn.disabled = true;
-                }
+                btn.disabled = !allData[asset];
             });
 
             const requestedAsset = getRequestedAsset();
-            const firstAvailable = [requestedAsset, 'gold', 'bitcoin', 'usdt'].find(a => a && allData[a]);
+            const firstAvailable = [requestedAsset, currentAsset, 'gold', 'bitcoin', 'usdt'].find(a => a && allData[a]);
             if (firstAvailable) switchTab(firstAvailable);
         } catch (e) {
-            document.getElementById('loading').style.display = 'none';
+            if (!allData) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'none';
+            }
             document.getElementById('error').style.display = 'block';
             document.querySelector('.error-msg').textContent =
                 '데이터 로딩 실패: ' + e.message;
+        } finally {
+            setRefreshButtonState(false);
         }
     }
 
@@ -195,18 +283,23 @@
     function switchTab(asset) {
         currentAsset = asset;
         const config = ASSETS[asset];
-        const data = allData[asset];
+        const data = allData && allData[asset];
         if (!data) return;
 
         const url = new URL(window.location.href);
         url.searchParams.set('asset', asset);
         window.history.replaceState(null, '', url);
 
+        document.documentElement.style.setProperty('--asset-color', config.gapColor);
+        document.getElementById('asset-title').textContent = config.label;
+        document.getElementById('asset-summary').textContent = config.summary;
+
         document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.asset === asset);
+            const isActive = btn.dataset.asset === asset;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
 
-        document.getElementById('subtitle').textContent = config.label;
         updateCards(data, config);
 
         document.getElementById('price-chart-title').textContent =
@@ -219,6 +312,7 @@
         if (priceChartInstance) { priceChartInstance.destroy(); priceChartInstance = null; }
         if (gapChartInstance) { gapChartInstance.destroy(); gapChartInstance = null; }
 
+        applyChartDefaults();
         renderPriceChart(data, config);
         renderGapChart(data, config);
         renderTable(data.high_gap_periods, config);
@@ -293,9 +387,9 @@
         return Number(value).toLocaleString() + ' 원';
     }
 
-    /* ── Chart: 가격 비교 ── */
     function renderPriceChart(data, config) {
         const ctx = document.getElementById('priceChart').getContext('2d');
+        const theme = getChartTheme();
         priceChartInstance = new Chart(ctx, {
             type: 'line',
             data: {
@@ -328,33 +422,34 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
-                aspectRatio: 2.2,
+                aspectRatio: 2.35,
                 interaction: { mode: 'index', intersect: false },
                 scales: {
                     x: {
                         type: 'category',
-                        grid: { color: 'rgba(42, 45, 58, 0.5)' },
-                        ticks: { maxTicksLimit: 10, maxRotation: 0, font: { size: 11 } },
+                        grid: { color: theme.grid },
+                        ticks: { maxTicksLimit: 10, maxRotation: 0, font: { size: 11 }, color: theme.textDim },
                     },
                     y: {
-                        grid: { color: 'rgba(42, 45, 58, 0.5)' },
+                        grid: { color: theme.grid },
                         ticks: {
                             font: { size: 11 },
+                            color: theme.textDim,
                             callback: v => v >= 1e6 ? (v / 1e6).toFixed(0) + 'M' : v.toLocaleString(),
                         },
-                        title: { display: true, text: config.unit, font: { size: 11 } },
+                        title: { display: true, text: config.unit, font: { size: 11 }, color: theme.textDim },
                     },
                 },
                 plugins: {
                     legend: {
-                        labels: { usePointStyle: true, pointStyle: 'circle', padding: 20, font: { size: 12 } },
+                        labels: { usePointStyle: true, pointStyle: 'circle', padding: 20, font: { size: 12 }, color: theme.textDim },
                     },
                     tooltip: {
-                        backgroundColor: '#1e2130',
-                        borderColor: '#363950',
+                        backgroundColor: theme.surface2,
+                        borderColor: theme.border,
                         borderWidth: 1,
                         titleFont: { size: 12 },
-                        bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                        bodyFont: { family: "'SFMono-Regular', Consolas, monospace", size: 12 },
                         padding: 12,
                         cornerRadius: 8,
                         callbacks: {
@@ -366,7 +461,6 @@
         });
     }
 
-    /* ── Chart: 괴리율 ── */
     function buildHighlightBoxes(data, config) {
         const boxes = {};
         let inRegion = false, regionStart = null, regionIdx = 0;
@@ -395,30 +489,31 @@
 
     function renderGapChart(data, config) {
         const ctx = document.getElementById('gapChart').getContext('2d');
+        const theme = getChartTheme();
         const boxes = buildHighlightBoxes(data, config);
         const threshold = config.threshold;
 
         boxes['thresholdLine'] = {
             type: 'line', yMin: threshold, yMax: threshold,
-            borderColor: 'rgba(246, 70, 93, 0.5)', borderWidth: 1.5, borderDash: [6, 4],
+            borderColor: theme.up, borderWidth: 1.5, borderDash: [6, 4],
             label: {
                 display: true, content: '+' + threshold + '%', position: 'end',
-                backgroundColor: 'rgba(246, 70, 93, 0.7)', color: '#fff',
-                font: { size: 10, family: "'JetBrains Mono', monospace" }, padding: { x: 6, y: 3 },
+                backgroundColor: theme.up, color: '#fff',
+                font: { size: 10, family: "'SFMono-Regular', Consolas, monospace" }, padding: { x: 6, y: 3 },
             },
         };
         boxes['negThresholdLine'] = {
             type: 'line', yMin: -threshold, yMax: -threshold,
-            borderColor: 'rgba(74, 144, 217, 0.5)', borderWidth: 1.5, borderDash: [6, 4],
+            borderColor: theme.down, borderWidth: 1.5, borderDash: [6, 4],
             label: {
                 display: true, content: '-' + threshold + '%', position: 'end',
-                backgroundColor: 'rgba(74, 144, 217, 0.7)', color: '#fff',
-                font: { size: 10, family: "'JetBrains Mono', monospace" }, padding: { x: 6, y: 3 },
+                backgroundColor: theme.down, color: '#fff',
+                font: { size: 10, family: "'SFMono-Regular', Consolas, monospace" }, padding: { x: 6, y: 3 },
             },
         };
         boxes['zeroLine'] = {
             type: 'line', yMin: 0, yMax: 0,
-            borderColor: 'rgba(154, 160, 176, 0.25)', borderWidth: 1,
+            borderColor: theme.grid, borderWidth: 1,
         };
 
         const gradient = ctx.createLinearGradient(0, 0, 0, ctx.canvas.clientHeight || 300);
@@ -444,29 +539,29 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
-                aspectRatio: 2.2,
+                aspectRatio: 2.35,
                 interaction: { mode: 'index', intersect: false },
                 scales: {
                     x: {
                         type: 'category',
-                        grid: { color: 'rgba(42, 45, 58, 0.5)' },
-                        ticks: { maxTicksLimit: 10, maxRotation: 0, font: { size: 11 } },
+                        grid: { color: theme.grid },
+                        ticks: { maxTicksLimit: 10, maxRotation: 0, font: { size: 11 }, color: theme.textDim },
                     },
                     y: {
-                        grid: { color: 'rgba(42, 45, 58, 0.5)' },
-                        ticks: { font: { size: 11 }, callback: v => v.toFixed(0) + '%' },
-                        title: { display: true, text: '괴리율 (%)', font: { size: 11 } },
+                        grid: { color: theme.grid },
+                        ticks: { font: { size: 11 }, color: theme.textDim, callback: v => v.toFixed(0) + '%' },
+                        title: { display: true, text: '괴리율 (%)', font: { size: 11 }, color: theme.textDim },
                     },
                 },
                 plugins: {
                     legend: { display: false },
                     annotation: { annotations: boxes },
                     tooltip: {
-                        backgroundColor: '#1e2130',
-                        borderColor: '#363950',
+                        backgroundColor: theme.surface2,
+                        borderColor: theme.border,
                         borderWidth: 1,
                         titleFont: { size: 12 },
-                        bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                        bodyFont: { family: "'SFMono-Regular', Consolas, monospace", size: 12 },
                         padding: 12,
                         cornerRadius: 8,
                         callbacks: {
@@ -478,7 +573,6 @@
         });
     }
 
-    /* ── Table ── */
     function renderTable(periods, config) {
         const tbody = document.querySelector('#gapTable tbody');
         tbody.innerHTML = '';
@@ -508,6 +602,49 @@
         });
     }
 
+    function updateThemeButtonLabel() {
+        const themeBtn = document.getElementById('themeToggle');
+        if (!themeBtn) return;
+        themeBtn.setAttribute('aria-label', currentTheme === 'dark' ? '일반 모드로 전환' : '다크 모드로 전환');
+        themeBtn.title = '테마 전환';
+    }
+
+    function applyTheme(theme, { persist = true, rerender = true } = {}) {
+        currentTheme = theme === 'dark' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = currentTheme;
+        updateThemeButtonLabel();
+
+        if (persist) {
+            try {
+                localStorage.setItem(THEME_STORAGE_KEY, currentTheme);
+            } catch (e) {
+                // Ignore storage failures and keep the session theme.
+            }
+        }
+
+        if (rerender && allData && allData[currentAsset]) {
+            switchTab(currentAsset);
+        }
+    }
+
+    function bindThemeButton() {
+        const themeBtn = document.getElementById('themeToggle');
+        if (!themeBtn) return;
+        themeBtn.addEventListener('click', () => {
+            applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        });
+        updateThemeButtonLabel();
+    }
+
+    function bindRefreshButton() {
+        const refreshBtn = document.getElementById('refreshBtn');
+        if (!refreshBtn) return;
+        refreshBtn.addEventListener('click', () => loadData({ showLoading: false, bustCache: true }));
+    }
+
+    applyChartDefaults();
+    bindThemeButton();
+    bindRefreshButton();
     loadData();
     </script>
 </body>
