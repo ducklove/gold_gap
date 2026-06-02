@@ -141,7 +141,7 @@
         </div>
 
         <div class="footer">
-            데이터 출처: KRX, COMEX, Upbit, yfinance
+            데이터 출처: KRX, COMEX, Bithumb, Upbit, yfinance
         </div>
     </main>
 
@@ -352,9 +352,15 @@
 
     function switchTab(asset) {
         currentAsset = asset;
-        const config = ASSETS[asset];
         const data = allData && allData[asset];
         if (!data) return;
+        const config = { ...ASSETS[asset] };
+        if (data.domestic_label) {
+            config.domesticLabel = data.domestic_label;
+            if (asset === 'usdt') {
+                config.sourceSummary = `국내: ${data.domestic_label} · 국제: USDT-USD (Yahoo Finance) · 환율: USD/KRW KRW=X`;
+            }
+        }
         const activeData = getActiveAssetData(data, config);
         const chartConfig = getActiveChartConfig(config);
 

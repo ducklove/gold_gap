@@ -4,7 +4,7 @@
 지원 자산:
 - GOLD: KRX 금현물 vs COMEX 금선물
 - BITCOIN: 업비트 BTC vs Binance BTC (yfinance BTC-USD)
-- USDT: 업비트 USDT vs 1 USD (yfinance USDT-USD ≈ 1)
+- USDT: 빗썸 USDT (업비트 백업) vs 1 USD (yfinance USDT-USD ≈ 1)
 """
 
 import json
@@ -16,7 +16,6 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-import pyupbit
 import requests
 import yfinance as yf
 
@@ -32,8 +31,11 @@ KRX_GOLD_ETF = "411060"
 KRX_GOLD_ETF_CU_SIZE = 100_000  # 1 CU = 100,000 좌
 WGC_GOLD_SPOT_URL = "https://fsapi.gold.org/api/goldprice/v13/chart/price/usd/oz/{start},{end}?cache09092024"
 GOLD_API_SPOT_URL = "https://api.gold-api.com/price/XAU/USD"
-BITHUMB_CANDLE_URL = "https://api.bithumb.com/public/candlestick/{symbol}/24h"
 BITHUMB_TICKER_URL = "https://api.bithumb.com/public/ticker/{symbol}"
+UPBIT_DAY_CANDLES_URL = "https://api.upbit.com/v1/candles/days"
+UPBIT_TICKER_URL = "https://api.upbit.com/v1/ticker"
+BITHUMB_DAY_CANDLES_URL = "https://api.bithumb.com/v1/candles/days"
+PUBLIC_API_HEADERS = {"Accept": "application/json"}
 
 # Asset-specific gap thresholds
 THRESHOLDS = {
@@ -77,10 +79,10 @@ def upsert_latest_row(df, row):
     return result.sort_index()
 
 
-def fetch_exchange_rate(years=5):
+def fetch_exchange_rate(start_date=None):
     """KRW=X 환율을 공통으로 추출"""
     end = datetime.now()
-    start = end - timedelta(days=years * 365)
+    start = start_date or (end - timedelta(days=5 * 365))
 
     logger.info("Fetching USD/KRW exchange rate (KRW=X)...")
     fx = yf.download("KRW=X", start=start, end=end, progress=False)
@@ -106,10 +108,10 @@ def attach_fx_and_convert(gold_df, fx_df, usd_col, price_col):
     return intl
 
 
-def fetch_new_york_gold_futures(fx_df):
+def fetch_new_york_gold_futures(fx_df, start_date=None):
     """yfinance로 국제 금 선물(GC=F) 조회, 공통 환율 재사용"""
     end = datetime.now()
-    start = end - timedelta(days=5 * 365)
+    start = start_date or (end - timedelta(days=5 * 365))
 
     logger.info("Fetching New York gold futures (GC=F)...")
     gold = yf.download("GC=F", start=start, end=end, progress=False)
@@ -129,10 +131,12 @@ def fetch_new_york_gold_futures(fx_df):
     return attach_fx_and_convert(gold_df, fx_df, "gold_usd_oz", "intl_price")
 
 
-def fetch_london_spot_gold(fx_df):
+def fetch_london_spot_gold(fx_df, start_date=None):
     """World Gold Council/ICE spot gold 시계열 + Gold API 최신 XAU spot quote."""
     end = datetime.now(KST)
-    start = end - timedelta(days=5 * 365)
+    start = start_date or (end - timedelta(days=5 * 365))
+    if getattr(start, "tzinfo", None) is None:
+        start = start.replace(tzinfo=KST)
     start_ms = int(start.astimezone(ZoneInfo("UTC")).timestamp() * 1000)
     end_ms = int(end.astimezone(ZoneInfo("UTC")).timestamp() * 1000)
 
@@ -191,12 +195,12 @@ def _get_gold_grams_per_unit():
     raise ValueError("Gold constituent not found in ETF CU data")
 
 
-def fetch_krx_gold():
+def fetch_krx_gold(start_date=None):
     """411060 ETF(ACE KRX금현물) 시세로 국내 금 가격(원/g) 산출"""
     grams_per_unit = _get_gold_grams_per_unit()
 
     end = datetime.now()
-    start = end - timedelta(days=5 * 365)
+    start = start_date or (end - timedelta(days=5 * 365))
 
     logger.info("Fetching KRX gold ETF (411060.KS) via yfinance...")
     etf = yf.download(KRX_GOLD_ETF + ".KS", start=start, end=end, progress=False)
@@ -222,10 +226,10 @@ def fetch_krx_gold():
     return result
 
 
-def fetch_international_crypto(ticker, fx_df):
+def fetch_international_crypto(ticker, fx_df, start_date=None):
     """yfinance로 크립토 국제 가격 조회 (BTC-USD, USDT-USD 등)"""
     end = datetime.now()
-    start = end - timedelta(days=5 * 365)
+    start = start_date or (end - timedelta(days=5 * 365))
 
     logger.info(f"Fetching international crypto ({ticker})...")
     crypto = yf.download(ticker, start=start, end=end, progress=False)
@@ -251,91 +255,183 @@ def fetch_international_crypto(ticker, fx_df):
     return intl
 
 
-def fetch_upbit_ohlcv(ticker, years=5):
-    """pyupbit로 업비트 일봉 조회 (페이지네이션으로 전체 기간)"""
-    logger.info(f"Fetching Upbit OHLCV for {ticker}...")
+def fetch_exchange_day_candles(
+    url,
+    ticker,
+    exchange_name,
+    start_date=None,
+    pagination_date_field="candle_date_time_utc",
+    index_date_field="candle_date_time_utc",
+    latest_price=None,
+):
+    """거래소 공개 REST API로 일봉 조회 (페이지네이션으로 전체 기간)"""
+    logger.info(f"Fetching {exchange_name} day candles for {ticker}...")
 
     all_dfs = []
     to = datetime.now()
-    target_start = datetime.now() - timedelta(days=years * 365)
+    target_start = pd.Timestamp(
+        start_date or (datetime.now() - timedelta(days=5 * 365))
+    ).tz_localize(None).normalize()
 
-    while to > target_start:
-        df = pyupbit.get_ohlcv(ticker, interval="day", count=200, to=to)
-        if df is None or df.empty:
+    while pd.Timestamp(to).tz_localize(None) > target_start:
+        params = {"market": ticker, "count": 200}
+        if all_dfs:
+            params["to"] = to.strftime("%Y-%m-%dT%H:%M:%S")
+
+        resp = requests.get(
+            url,
+            params=params,
+            headers=PUBLIC_API_HEADERS,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        rows = resp.json()
+
+        if isinstance(rows, dict):
+            raise ValueError(f"{exchange_name} returned error for {ticker}: {rows}")
+        if not rows:
             break
 
+        df = pd.DataFrame(rows)
+        if "trade_price" not in df or index_date_field not in df:
+            raise ValueError(f"{exchange_name} response missing candle fields for {ticker}")
+
         all_dfs.append(df)
-        to = df.index[0] - timedelta(days=1)
+        page_dates = pd.to_datetime(df[pagination_date_field], errors="coerce")
+        oldest = page_dates.min()
+        if pd.isna(oldest):
+            raise ValueError(f"{exchange_name} response has invalid candle dates for {ticker}")
+
+        to = oldest.to_pydatetime().replace(tzinfo=None)
         time.sleep(0.2)
 
     if not all_dfs:
-        raise ValueError(f"Failed to fetch Upbit data for {ticker}")
+        raise ValueError(f"Failed to fetch {exchange_name} data for {ticker}")
 
     result = pd.concat(all_dfs).sort_index()
-    result = result[~result.index.duplicated(keep="first")]
+    dates = pd.to_datetime(result[index_date_field], errors="coerce")
+    result = result.assign(date=dates.dt.normalize())
+    result = result.dropna(subset=["date", "trade_price"])
+    result = result.sort_values("date")
 
-    # Filter to requested period
-    result = result[result.index >= target_start]
-    result.index = pd.to_datetime(result.index).tz_localize(None)
+    domestic = pd.DataFrame(
+        {"domestic_price": result["trade_price"].astype(float).values},
+        index=pd.DatetimeIndex(result["date"]),
+    )
+    domestic = domestic[~domestic.index.duplicated(keep="last")]
+    domestic = domestic[domestic.index >= target_start].dropna()
 
-    # 업비트 인덱스는 09:00:00 KST가 포함됨 → 날짜만 남겨서 yfinance와 조인 가능하게
-    result.index = result.index.normalize()
+    if domestic.empty:
+        raise ValueError(f"No {exchange_name} data for {ticker} after filtering")
 
-    domestic = pd.DataFrame({"domestic_price": result["close"]})
-    domestic = domestic.dropna()
+    if latest_price:
+        domestic = upsert_latest_row(domestic, {"domestic_price": float(latest_price)})
 
     logger.info(
-        f"Upbit {ticker}: {len(domestic)} rows "
+        f"{exchange_name} {ticker}: {len(domestic)} rows "
         f"({domestic.index.min().strftime('%Y-%m-%d')} ~ {domestic.index.max().strftime('%Y-%m-%d')})"
     )
     return domestic
 
 
-def fetch_bithumb_ohlcv(symbol, years=5):
-    """빗썸 일봉 조회. USDT/KRW처럼 업비트보다 긴 원화 히스토리가 필요한 경우 사용."""
-    logger.info(f"Fetching Bithumb OHLCV for {symbol}...")
-    resp = requests.get(
-        BITHUMB_CANDLE_URL.format(symbol=symbol),
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=20,
-    )
-    resp.raise_for_status()
-    payload = resp.json()
-    if payload.get("status") != "0000" or not payload.get("data"):
-        raise ValueError(f"Failed to fetch Bithumb data for {symbol}")
-
-    rows = []
-    target_start = today_kst() - pd.Timedelta(days=years * 365)
-    for ts_ms, _open, close, _high, _low, _volume in payload["data"]:
-        date = pd.to_datetime(int(ts_ms), unit="ms", utc=True).tz_convert(KST).tz_localize(None).normalize()
-        if date >= target_start:
-            rows.append((date, float(close)))
-
-    if not rows:
-        raise ValueError(f"No Bithumb rows for {symbol}")
-
-    domestic = pd.DataFrame(rows, columns=["date", "domestic_price"]).set_index("date")
-    domestic = domestic[~domestic.index.duplicated(keep="last")].sort_index()
-
+def fetch_upbit_current_price(ticker):
+    """업비트 현재가 REST 조회."""
     try:
-        ticker_resp = requests.get(
+        resp = requests.get(
+            UPBIT_TICKER_URL,
+            params={"markets": ticker},
+            headers=PUBLIC_API_HEADERS,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        rows = resp.json()
+        if rows:
+            return float(rows[0]["trade_price"])
+    except Exception as e:
+        logger.warning(f"Latest Upbit ticker failed for {ticker}: {e}")
+    return None
+
+
+def fetch_bithumb_current_price(symbol):
+    """빗썸 현재가 REST 조회."""
+    try:
+        resp = requests.get(
             BITHUMB_TICKER_URL.format(symbol=symbol),
             headers={"User-Agent": "Mozilla/5.0"},
             timeout=10,
         )
-        ticker_resp.raise_for_status()
-        ticker_payload = ticker_resp.json()
-        if ticker_payload.get("status") == "0000":
-            latest = float(ticker_payload["data"]["closing_price"])
-            domestic = upsert_latest_row(domestic, {"domestic_price": latest})
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("status") == "0000":
+            return float(payload["data"]["closing_price"])
     except Exception as e:
         logger.warning(f"Latest Bithumb ticker failed for {symbol}: {e}")
+    return None
 
-    logger.info(
-        f"Bithumb {symbol}: {len(domestic)} rows "
-        f"({domestic.index.min().strftime('%Y-%m-%d')} ~ {domestic.index.max().strftime('%Y-%m-%d')})"
+
+def fetch_upbit_ohlcv(ticker, start_date=None, include_latest=False):
+    """업비트 REST API로 일봉 조회"""
+    return fetch_exchange_day_candles(
+        UPBIT_DAY_CANDLES_URL,
+        ticker,
+        "Upbit",
+        start_date,
+        pagination_date_field="candle_date_time_utc",
+        index_date_field="candle_date_time_utc",
+        latest_price=fetch_upbit_current_price(ticker) if include_latest else None,
     )
-    return domestic
+
+
+def fetch_bithumb_ohlcv(ticker, start_date=None, include_latest=False, public_symbol=None):
+    """빗썸 REST API로 일봉 조회"""
+    return fetch_exchange_day_candles(
+        BITHUMB_DAY_CANDLES_URL,
+        ticker,
+        "Bithumb",
+        start_date,
+        pagination_date_field="candle_date_time_kst",
+        index_date_field="candle_date_time_kst",
+        latest_price=(
+            fetch_bithumb_current_price(public_symbol)
+            if include_latest and public_symbol
+            else None
+        ),
+    )
+
+
+def fetch_usdt_domestic(start_date=None):
+    """USDT 국내 가격 조회: 빗썸 우선, 실패 시 업비트 백업"""
+    sources = [
+        (
+            "bithumb",
+            "빗썸 USDT",
+            lambda: fetch_bithumb_ohlcv(
+                "KRW-USDT",
+                start_date,
+                include_latest=True,
+                public_symbol="USDT_KRW",
+            ),
+        ),
+        (
+            "upbit",
+            "업비트 USDT (백업)",
+            lambda: fetch_upbit_ohlcv("KRW-USDT", start_date, include_latest=True),
+        ),
+    ]
+    errors = []
+
+    for source_key, source_label, fetcher in sources:
+        try:
+            domestic_df = fetcher()
+            return domestic_df, {
+                "domestic_source": source_key,
+                "domestic_label": source_label,
+            }
+        except Exception as e:
+            logger.warning(f"USDT domestic fetch failed from {source_label}: {e}")
+            errors.append(f"{source_label}: {e}")
+
+    raise ValueError("Failed to fetch USDT domestic data: " + "; ".join(errors))
 
 
 def calculate_gap(intl_df, domestic_df):
@@ -400,7 +496,7 @@ def find_high_gap_periods(merged_df, threshold=5.0):
     return periods
 
 
-def serialize_asset_data(merged, periods, extra_columns=None):
+def serialize_asset_data(merged, periods, extra_columns=None, metadata=None):
     """DataFrame → dict 변환 헬퍼"""
     payload = {
         "dates": [d.strftime("%Y-%m-%d") for d in merged.index],
@@ -413,15 +509,17 @@ def serialize_asset_data(merged, periods, extra_columns=None):
     for col in extra_columns or []:
         if col in merged:
             payload[col] = [round(float(v), 6) for v in merged[col]]
+    if metadata:
+        payload.update(metadata)
     return payload
 
 
-def get_gold_data(fx_df):
+def get_gold_data(fx_df, start_date=None):
     """금 자산 오케스트레이터"""
     logger.info("=== Fetching GOLD data ===")
-    domestic_df = fetch_krx_gold()
-    ny_df = fetch_new_york_gold_futures(fx_df)
-    spot_df = fetch_london_spot_gold(fx_df)
+    domestic_df = fetch_krx_gold(start_date)
+    ny_df = fetch_new_york_gold_futures(fx_df, start_date)
+    spot_df = fetch_london_spot_gold(fx_df, start_date)
 
     modes = {}
     for mode, intl_df in [("ny_futures", ny_df), ("london_spot", spot_df)]:
@@ -443,35 +541,37 @@ def get_gold_data(fx_df):
     return data
 
 
-def get_bitcoin_data(fx_df):
+def get_bitcoin_data(fx_df, start_date=None):
     """비트코인 자산 오케스트레이터"""
     logger.info("=== Fetching BITCOIN data ===")
-    intl_df = fetch_international_crypto("BTC-USD", fx_df)
-    domestic_df = fetch_upbit_ohlcv("KRW-BTC")
-    latest_domestic = pyupbit.get_current_price("KRW-BTC")
-    if latest_domestic:
-        domestic_df = upsert_latest_row(domestic_df, {"domestic_price": float(latest_domestic)})
+    intl_df = fetch_international_crypto("BTC-USD", fx_df, start_date)
+    domestic_df = fetch_upbit_ohlcv("KRW-BTC", start_date, include_latest=True)
     merged = calculate_gap(intl_df, domestic_df)
     periods = find_high_gap_periods(merged, threshold=THRESHOLDS["bitcoin"])
     data = serialize_asset_data(merged, periods, extra_columns=["crypto_usd"])
     data["sources"] = {
-        "domestic": "Upbit KRW-BTC daily candles plus pyupbit current price",
+        "domestic": "Upbit KRW-BTC daily candles plus current ticker",
         "international": "BTC-USD latest/daily close from Yahoo Finance, converted to KRW",
         "fx": "USD/KRW KRW=X latest/daily close from Yahoo Finance",
     }
     return data
 
 
-def get_usdt_data(fx_df):
+def get_usdt_data(fx_df, start_date=None):
     """USDT 자산 오케스트레이터"""
     logger.info("=== Fetching USDT data ===")
-    intl_df = fetch_international_crypto("USDT-USD", fx_df)
-    domestic_df = fetch_bithumb_ohlcv("USDT_KRW")
+    intl_df = fetch_international_crypto("USDT-USD", fx_df, start_date)
+    domestic_df, metadata = fetch_usdt_domestic(start_date)
     merged = calculate_gap(intl_df, domestic_df)
     periods = find_high_gap_periods(merged, threshold=THRESHOLDS["usdt"])
-    data = serialize_asset_data(merged, periods, extra_columns=["crypto_usd"])
+    data = serialize_asset_data(
+        merged,
+        periods,
+        extra_columns=["crypto_usd"],
+        metadata=metadata,
+    )
     data["sources"] = {
-        "domestic": "Bithumb USDT_KRW daily candles plus current ticker",
+        "domestic": f"{metadata['domestic_label']} daily candles; falls back to Upbit when Bithumb fails",
         "international": "USDT-USD latest/daily close from Yahoo Finance, converted to KRW",
         "fx": "USD/KRW KRW=X latest/daily close from Yahoo Finance",
     }
