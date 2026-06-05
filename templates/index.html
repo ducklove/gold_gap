@@ -78,26 +78,26 @@
                 </div>
             </div>
 
-            <div class="cards cards-secondary" id="gold-detail-cards" style="display:none;">
+            <div class="cards cards-secondary" id="asset-detail-cards" style="display:none;">
                 <div class="card">
                     <div class="card-label">기준환율</div>
-                    <div class="card-value" id="usd-krw">-</div>
-                    <div class="card-sub" id="usd-krw-sub"></div>
+                    <div class="card-value" id="detail-usd-krw">-</div>
+                    <div class="card-sub" id="detail-usd-krw-sub">USD/KRW</div>
                 </div>
                 <div class="card">
-                    <div class="card-label">국내가격 (원/g)</div>
-                    <div class="card-value" id="domestic-krw">-</div>
-                    <div class="card-sub" id="domestic-krw-sub"></div>
+                    <div class="card-label" id="detail-domestic-label">국내가격</div>
+                    <div class="card-value" id="detail-domestic-value">-</div>
+                    <div class="card-sub" id="detail-domestic-sub"></div>
                 </div>
-                <div class="card">
-                    <div class="card-label">런던 현물 ($/oz)</div>
-                    <div class="card-value" id="london-usd-oz">-</div>
-                    <div class="card-sub" id="london-usd-oz-sub">WGC/ICE spot</div>
+                <div class="card" id="detail-intl-primary-card">
+                    <div class="card-label" id="detail-intl-primary-label">국제가격</div>
+                    <div class="card-value" id="detail-intl-primary-value">-</div>
+                    <div class="card-sub" id="detail-intl-primary-sub"></div>
                 </div>
-                <div class="card">
-                    <div class="card-label">뉴욕선물 ($/oz)</div>
-                    <div class="card-value" id="ny-usd-oz">-</div>
-                    <div class="card-sub" id="ny-usd-oz-sub">COMEX GC=F</div>
+                <div class="card" id="detail-intl-secondary-card">
+                    <div class="card-label" id="detail-intl-secondary-label">국제가격</div>
+                    <div class="card-value" id="detail-intl-secondary-value">-</div>
+                    <div class="card-sub" id="detail-intl-secondary-sub"></div>
                 </div>
             </div>
 
@@ -663,37 +663,73 @@
             el.classList.add('low');
         }
 
-        const goldDetailCards = document.getElementById('gold-detail-cards');
-        if (currentAsset === 'gold') {
-            goldDetailCards.style.display = '';
-            updateGoldDetailCards(allData.gold, data);
-        } else {
-            goldDetailCards.style.display = 'none';
-        }
+        const detailCards = document.getElementById('asset-detail-cards');
+        detailCards.style.display = '';
+        updateDetailCards(allData[currentAsset], config, data);
     }
 
-    function updateGoldDetailCards(goldData, activeData) {
+    function updateDetailCards(assetData, config, activeData) {
         const lastUsdKrw = latestValue(activeData, 'usd_krw');
         const lastDomestic = latestValue(activeData, 'domestic_price');
-        const londonUsdOz = latestValue(goldData.intl_modes && goldData.intl_modes.london_spot, 'gold_usd_oz');
-        const nyUsdOz = latestValue(goldData.intl_modes && goldData.intl_modes.ny_futures, 'gold_usd_oz');
+        const lastIntl = latestValue(activeData, 'intl_price');
+        const lastCryptoUsd = latestValue(activeData, 'crypto_usd');
+        const secondaryCard = document.getElementById('detail-intl-secondary-card');
 
-        document.getElementById('usd-krw').textContent =
-            lastUsdKrw.toLocaleString('ko-KR', { maximumFractionDigits: 2 }) + ' 원';
+        document.getElementById('detail-usd-krw').textContent =
+            formatKrw(lastUsdKrw, { maximumFractionDigits: 2 });
 
-        document.getElementById('domestic-krw').textContent =
-            lastDomestic.toLocaleString('ko-KR', { maximumFractionDigits: 0 }) + ' 원';
+        document.getElementById('detail-domestic-label').textContent =
+            currentAsset === 'gold' ? '국내가격 (원/g)' : '국내가격';
+        document.getElementById('detail-domestic-value').textContent =
+            formatAssetKrw(lastDomestic, currentAsset);
+        document.getElementById('detail-domestic-sub').textContent = config.domesticLabel;
 
-        document.getElementById('london-usd-oz').textContent =
-            londonUsdOz == null ? '-' : '$' + Number(londonUsdOz).toLocaleString('en-US', { maximumFractionDigits: 2 });
+        if (currentAsset === 'gold') {
+            const londonUsdOz = latestValue(assetData.intl_modes && assetData.intl_modes.london_spot, 'gold_usd_oz');
+            const nyUsdOz = latestValue(assetData.intl_modes && assetData.intl_modes.ny_futures, 'gold_usd_oz');
 
-        document.getElementById('ny-usd-oz').textContent =
-            nyUsdOz == null ? '-' : '$' + Number(nyUsdOz).toLocaleString('en-US', { maximumFractionDigits: 2 });
+            document.getElementById('detail-intl-primary-label').textContent = '런던 현물 ($/oz)';
+            document.getElementById('detail-intl-primary-value').textContent = formatUsd(londonUsdOz, { maximumFractionDigits: 2 });
+            document.getElementById('detail-intl-primary-sub').textContent = 'WGC/ICE spot';
+
+            secondaryCard.hidden = false;
+            document.getElementById('detail-intl-secondary-label').textContent = '뉴욕선물 ($/oz)';
+            document.getElementById('detail-intl-secondary-value').textContent = formatUsd(nyUsdOz, { maximumFractionDigits: 2 });
+            document.getElementById('detail-intl-secondary-sub').textContent = 'COMEX GC=F';
+            return;
+        }
+
+        document.getElementById('detail-intl-primary-label').textContent = '국제가격 (KRW 환산)';
+        document.getElementById('detail-intl-primary-value').textContent = formatAssetKrw(lastIntl, currentAsset);
+        document.getElementById('detail-intl-primary-sub').textContent =
+            currentAsset === 'bitcoin'
+                ? 'BTC-USD ' + formatUsd(lastCryptoUsd, { maximumFractionDigits: 2 })
+                : 'USDT-USD ' + formatUsd(lastCryptoUsd, { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+
+        secondaryCard.hidden = true;
     }
 
     function formatPrice(value, asset) {
         if (asset === 'gold') return Number(value).toLocaleString() + ' 원/g';
         return Number(value).toLocaleString() + ' 원';
+    }
+
+    function formatKrw(value, options = {}) {
+        if (value == null || Number.isNaN(Number(value))) return '-';
+        return Number(value).toLocaleString('ko-KR', options) + ' 원';
+    }
+
+    function formatUsd(value, options = {}) {
+        if (value == null || Number.isNaN(Number(value))) return '-';
+        return '$' + Number(value).toLocaleString('en-US', options);
+    }
+
+    function formatAssetKrw(value, asset) {
+        if (value == null || Number.isNaN(Number(value))) return '-';
+        const digits = asset === 'usdt'
+            ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+            : { maximumFractionDigits: 0 };
+        return formatKrw(value, digits);
     }
 
     function renderPriceChart(data, config) {
