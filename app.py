@@ -4,7 +4,7 @@ Flask 메인 앱: 김치프리미엄 멀티 자산 대시보드
 
 import logging
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
 from data_fetcher import get_all_data
 
@@ -24,7 +24,8 @@ def index():
 @app.route("/api/data")
 def api_data():
     try:
-        data = get_all_data()
+        force_refresh = request.args.get("force") in {"1", "true", "yes"}
+        data = get_all_data(force_refresh=force_refresh)
         return jsonify(data)
     except Exception as e:
         logging.exception("Data fetch failed")

@@ -308,6 +308,30 @@
         return ASSETS.gold.intlModes[mode] ? mode : '';
     }
 
+    function getKstDateString(date = new Date()) {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).formatToParts(date).reduce((acc, part) => {
+            acc[part.type] = part.value;
+            return acc;
+        }, {});
+        return `${parts.year}-${parts.month}-${parts.day}`;
+    }
+
+    function getKstTimeString(date = new Date()) {
+        return new Intl.DateTimeFormat('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+        }).format(date).replace(/\.$/, '');
+    }
+
     function getActiveAssetData(data, config) {
         if (currentAsset !== 'gold' || !data.intl_modes) return data;
         return data.intl_modes[currentGoldIntlMode] || data.intl_modes[data.default_intl_mode] || data;
@@ -326,6 +350,217 @@
         const values = data && data[key];
         if (!values || values.length === 0) return null;
         return values[values.length - 1];
+    }
+
+    function roundNumber(value, digits = 2) {
+        if (value == null || Number.isNaN(Number(value))) return null;
+        const factor = 10 ** digits;
+        return Math.round(Number(value) * factor) / factor;
+    }
+
+    function ensureSeries(data, key) {
+        if (!Array.isArray(data[key])) {
+            data[key] = Array(data.dates.length).fill(null);
+        }
+        while (data[key].length < data.dates.length) {
+            data[key].push(data[key].length ? data[key][data[key].length - 1] : null);
+        }
+    }
+
+    function upsertQuotePoint(data, date, values, threshold) {
+        let idx = data.dates.indexOf(date);
+        const arrayKeys = Object.keys(data).filter(key => key !== 'dates' && Array.isArray(data[key]));
+
+        if (idx === -1) {
+            data.dates.push(date);
+            idx = data.dates.length - 1;
+            arrayKeys.forEach(key => {
+                const last = data[key].length ? data[key][data[key].length - 1] : null;
+                data[key].push(last);
+            });
+        }
+
+        Object.entries(values).forEach(([key, value]) => {
+            ensureSeries(data, key);
+            data[key][idx] = value;
+        });
+
+        ensureSeries(data, 'gap_pct');
+        if (data.domestic_price[idx] != null && data.intl_price[idx] != null && data.intl_price[idx] !== 0) {
+            data.gap_pct[idx] = roundNumber(((data.domestic_price[idx] - data.intl_price[idx]) / data.intl_price[idx]) * 100, 2);
+        }
+        data.high_gap_periods = buildHighGapPeriods(data, threshold);
+    }
+
+    function buildHighGapPeriods(data, threshold) {
+        const periods = [];
+        let inPeriod = false;
+        let start = '';
+        let maxGap = 0;
+
+        data.dates.forEach((date, idx) => {
+            const gap = Number(data.gap_pct[idx]);
+            if (Number.isNaN(gap)) return;
+            if (Math.abs(gap) >= threshold) {
+                if (!inPeriod) {
+                    inPeriod = true;
+                    start = date;
+                    maxGap = gap;
+                } else if (Math.abs(gap) > Math.abs(maxGap)) {
+                    maxGap = gap;
+                }
+            } else if (inPeriod) {
+                const prevDate = data.dates[Math.max(idx - 1, 0)];
+                periods.push({
+                    start,
+                    end: prevDate,
+                    max_gap: roundNumber(maxGap, 2),
+                    duration_days: Math.max(1, Math.round((new Date(prevDate) - new Date(start)) / 86400000) + 1),
+                });
+                inPeriod = false;
+            }
+        });
+
+        if (inPeriod && data.dates.length) {
+            const end = data.dates[data.dates.length - 1];
+            periods.push({
+                start,
+                end,
+                max_gap: roundNumber(maxGap, 2),
+                duration_days: Math.max(1, Math.round((new Date(end) - new Date(start)) / 86400000) + 1),
+            });
+        }
+        return periods;
+    }
+
+    async function fetchJson(url) {
+        const resp = await fetch(url, { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
+    }
+
+    async function fetchBackendFreshData() {
+        try {
+            return await fetchJson('api/data?force=1&t=' + Date.now());
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function fetchClientLiveQuotes() {
+        const [fx, goldSpot, upbitBtc, binanceBtc, bithumbUsdt] = await Promise.allSettled([
+            fetchJson('https://open.er-api.com/v6/latest/USD'),
+            fetchJson('https://api.gold-api.com/price/XAU/USD'),
+            fetchJson('https://api.upbit.com/v1/ticker?markets=KRW-BTC'),
+            fetchJson('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'),
+            fetchJson('https://api.bithumb.com/public/ticker/USDT_KRW'),
+        ]);
+
+        const quote = {};
+        if (fx.status === 'fulfilled' && fx.value && fx.value.rates && fx.value.rates.KRW) {
+            quote.usdKrw = Number(fx.value.rates.KRW);
+        }
+        if (goldSpot.status === 'fulfilled' && goldSpot.value && goldSpot.value.price) {
+            quote.goldSpotUsdOz = Number(goldSpot.value.price);
+        }
+        if (upbitBtc.status === 'fulfilled' && Array.isArray(upbitBtc.value) && upbitBtc.value[0]) {
+            quote.btcKrw = Number(upbitBtc.value[0].trade_price);
+        }
+        if (binanceBtc.status === 'fulfilled' && binanceBtc.value && binanceBtc.value.price) {
+            quote.btcUsd = Number(binanceBtc.value.price);
+        }
+        if (bithumbUsdt.status === 'fulfilled' && bithumbUsdt.value && bithumbUsdt.value.status === '0000') {
+            quote.usdtKrw = Number(bithumbUsdt.value.data.closing_price);
+        }
+        return quote;
+    }
+
+    function syncGoldDefaultMode() {
+        if (!allData.gold || !allData.gold.intl_modes) return;
+        const defaultMode = allData.gold.default_intl_mode || 'ny_futures';
+        const modeData = allData.gold.intl_modes[defaultMode];
+        if (!modeData) return;
+        ['dates', 'domestic_price', 'intl_price', 'gap_pct', 'usd_krw', 'high_gap_periods', 'gold_usd_oz'].forEach(key => {
+            if (modeData[key]) allData.gold[key] = Array.isArray(modeData[key]) ? [...modeData[key]] : modeData[key];
+        });
+    }
+
+    async function applyClientLiveQuotes() {
+        if (!allData) throw new Error('기준 데이터가 아직 로드되지 않았습니다.');
+        const quote = await fetchClientLiveQuotes();
+        const date = getKstDateString();
+        let applied = 0;
+
+        if (allData.gold && allData.gold.intl_modes && quote.usdKrw) {
+            const domestic = latestValue(allData.gold.intl_modes.ny_futures, 'domestic_price');
+            const nyUsdOz = latestValue(allData.gold.intl_modes.ny_futures, 'gold_usd_oz');
+            if (domestic != null && nyUsdOz != null) {
+                upsertQuotePoint(allData.gold.intl_modes.ny_futures, date, {
+                    domestic_price: roundNumber(domestic, 2),
+                    gold_usd_oz: roundNumber(nyUsdOz, 6),
+                    usd_krw: roundNumber(quote.usdKrw, 2),
+                    intl_price: roundNumber((nyUsdOz * quote.usdKrw) / TROY_OZ_TO_GRAM, 2),
+                }, ASSETS.gold.threshold);
+                applied++;
+            }
+            if (domestic != null && quote.goldSpotUsdOz) {
+                upsertQuotePoint(allData.gold.intl_modes.london_spot, date, {
+                    domestic_price: roundNumber(domestic, 2),
+                    gold_usd_oz: roundNumber(quote.goldSpotUsdOz, 6),
+                    usd_krw: roundNumber(quote.usdKrw, 2),
+                    intl_price: roundNumber((quote.goldSpotUsdOz * quote.usdKrw) / TROY_OZ_TO_GRAM, 2),
+                }, ASSETS.gold.threshold);
+                applied++;
+            }
+            syncGoldDefaultMode();
+        }
+
+        if (allData.bitcoin && quote.usdKrw && quote.btcKrw && quote.btcUsd) {
+            upsertQuotePoint(allData.bitcoin, date, {
+                domestic_price: roundNumber(quote.btcKrw, 2),
+                crypto_usd: roundNumber(quote.btcUsd, 6),
+                usd_krw: roundNumber(quote.usdKrw, 2),
+                intl_price: roundNumber(quote.btcUsd * quote.usdKrw, 2),
+            }, ASSETS.bitcoin.threshold);
+            applied++;
+        }
+
+        if (allData.usdt && quote.usdKrw && quote.usdtKrw) {
+            upsertQuotePoint(allData.usdt, date, {
+                domestic_price: roundNumber(quote.usdtKrw, 2),
+                crypto_usd: 1,
+                usd_krw: roundNumber(quote.usdKrw, 2),
+                intl_price: roundNumber(quote.usdKrw, 2),
+            }, ASSETS.usdt.threshold);
+            applied++;
+        }
+
+        if (!applied) throw new Error('브라우저에서 접근 가능한 현재가 API 응답이 없습니다.');
+        allData.updated_at = '브라우저 현재가 갱신: ' + getKstTimeString();
+        return applied;
+    }
+
+    async function refreshCurrentData() {
+        if (refreshInFlight) return;
+        setRefreshButtonState(true);
+        document.getElementById('error').style.display = 'none';
+        try {
+            const fresh = await fetchBackendFreshData();
+            if (fresh) {
+                allData = fresh;
+            } else {
+                await applyClientLiveQuotes();
+            }
+            if (allData.updated_at) {
+                document.getElementById('updated-at').textContent = '최종 업데이트: ' + allData.updated_at;
+            }
+            switchTab(currentAsset);
+        } catch (e) {
+            document.getElementById('error').style.display = 'block';
+            document.querySelector('.error-msg').textContent = '현재가 갱신 실패: ' + e.message;
+        } finally {
+            setRefreshButtonState(false);
+        }
     }
 
     function updateGoldModeToggle() {
@@ -717,7 +952,7 @@
     function bindRefreshButton() {
         const refreshBtn = document.getElementById('refreshBtn');
         if (!refreshBtn) return;
-        refreshBtn.addEventListener('click', () => loadData({ showLoading: false, bustCache: true }));
+        refreshBtn.addEventListener('click', refreshCurrentData);
     }
 
     function bindGoldModeButtons() {
