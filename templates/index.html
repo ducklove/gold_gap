@@ -4,16 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>김치프리미엄 대시보드</title>
+    <link rel="icon" type="image/svg+xml" href="static/icon.svg">
     <script>
+    // iframe embed + theme: ?theme=dark|light overrides stored theme; ?embed hides chrome.
     (function() {
         try {
-            var theme = localStorage.getItem('theme') || localStorage.getItem('preferred-theme') || 'light';
+            var params = new URLSearchParams(location.search);
+            var urlTheme = params.get('theme');
+            var stored = localStorage.getItem('theme') || localStorage.getItem('preferred-theme');
+            var theme = (urlTheme === 'dark' || urlTheme === 'light') ? urlTheme : (stored || 'light');
             document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+            var embed = params.get('embed');
+            if (embed !== null && embed !== '0' && embed !== 'false') {
+                document.documentElement.dataset.embed = '1';
+            }
         } catch (e) {
             document.documentElement.dataset.theme = 'light';
         }
     })();
     </script>
+    <style>
+    /* iframe embed mode: hide standalone chrome so the dashboard fits a host frame */
+    html[data-embed] .header,
+    html[data-embed] footer { display: none !important; }
+    html[data-embed] .container { padding-top: 14px !important; }
+    </style>
     <link rel="stylesheet" href="static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
