@@ -65,9 +65,10 @@ def test_cli_fallback_keeps_existing_data_and_attaches_meta(tmp_path, golden_dat
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} KST", written["updated_at"])
 
     # meta 블록: 모든 출력 경로에 부착되는 프론트 계약
+    # (meta는 레지스트리 전체를 담는다 — 아직 데이터가 없는 신규 자산 포함)
     meta = written["meta"]
     assert meta["schema_version"] == 2
-    assert set(meta["assets"]) == {"gold", "bitcoin", "usdt"}
+    assert set(meta["assets"]) == {"gold", "bitcoin", "eth", "usdt"}
     assert "+09:00" in meta["generated_at"]
 
 

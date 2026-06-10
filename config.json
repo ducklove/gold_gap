@@ -18,6 +18,13 @@
       "portfolioCodes": ["CRYPTO_BTC"],
       "thresholdPct": 5.0
     },
+    "eth": {
+      "label": "Ethereum",
+      "domesticLabel": "Upbit ETH",
+      "internationalLabel": "ETH-USD converted to KRW",
+      "portfolioCodes": [],
+      "thresholdPct": 5.0
+    },
     "usdt": {
       "label": "USDT",
       "domesticLabel": "Bithumb USDT",

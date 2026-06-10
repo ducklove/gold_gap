@@ -1,6 +1,6 @@
 """정적 배포용 data.json 생성 스크립트 (증분 업데이트 지원) — 얇은 CLI.
 
-세 자산(gold, bitcoin, usdt)을 순차 fetch.
+자산 레지스트리(goldgap.assets.ASSETS)의 자산을 순차 fetch.
 기존 data.json이 있으면 마지막 날짜 이후만 가져와서 병합.
 개별 자산 fetch 실패 시 기존 데이터 유지, 전체 실패 시 기존 data.json 폴백.
 
