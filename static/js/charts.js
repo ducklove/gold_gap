@@ -7,6 +7,7 @@
 import { formatPrice } from './format.js';
 import { buildGapHistogram } from './stats.js';
 import { normalizeTo100 } from './market.js';
+import { t } from './i18n.js';
 
 let priceChartInstance = null;
 let gapChartInstance = null;
@@ -215,7 +216,7 @@ export function renderGapChart(data, config) {
         data: {
             labels: data.dates,
             datasets: [{
-                label: '괴리율 (%)',
+                label: t('chart.gapAxis'),
                 data: data.gap_pct,
                 borderColor: config.gapColor,
                 backgroundColor: gradient,
@@ -240,7 +241,7 @@ export function renderGapChart(data, config) {
                 y: {
                     grid: { color: theme.grid },
                     ticks: { font: { size: 11 }, color: theme.textDim, callback: v => v.toFixed(0) + '%' },
-                    title: { display: true, text: '괴리율 (%)', font: { size: 11 }, color: theme.textDim },
+                    title: { display: true, text: t('chart.gapAxis'), font: { size: 11 }, color: theme.textDim },
                 },
             },
             plugins: {
@@ -258,7 +259,7 @@ export function renderGapChart(data, config) {
                     padding: 12,
                     cornerRadius: 8,
                     callbacks: {
-                        label: ctx => '괴리율: ' + ctx.parsed.y.toFixed(2) + '%',
+                        label: ctx => t('chart.gapTooltip', { value: ctx.parsed.y.toFixed(2) }),
                     },
                 },
             },
@@ -330,7 +331,7 @@ export function renderGapHistogram(data, config) {
             borderDash: [4, 4],
             label: {
                 display: true,
-                content: '현재 ' + (current >= 0 ? '+' : '') + current.toFixed(2) + '%',
+                content: t('chart.histCurrent', { value: (current >= 0 ? '+' : '') + current.toFixed(2) }),
                 position: 'start',
                 backgroundColor: theme.text,
                 color: theme.surface,
@@ -346,7 +347,7 @@ export function renderGapHistogram(data, config) {
         data: {
             labels,
             datasets: [{
-                label: '일수',
+                label: t('chart.days'),
                 data: bins.map(b => b.count),
                 backgroundColor: colors,
                 borderColor: config.gapColor,
@@ -364,13 +365,13 @@ export function renderGapHistogram(data, config) {
                     type: 'category',
                     grid: { display: false },
                     ticks: { maxTicksLimit: 13, maxRotation: 0, font: { size: 11 }, color: theme.textDim },
-                    title: { display: true, text: '괴리율 (%)', font: { size: 11 }, color: theme.textDim },
+                    title: { display: true, text: t('chart.gapAxis'), font: { size: 11 }, color: theme.textDim },
                 },
                 y: {
                     beginAtZero: true,
                     grid: { color: theme.grid },
                     ticks: { font: { size: 11 }, color: theme.textDim, precision: 0 },
-                    title: { display: true, text: '일수', font: { size: 11 }, color: theme.textDim },
+                    title: { display: true, text: t('chart.days'), font: { size: 11 }, color: theme.textDim },
                 },
             },
             plugins: {
@@ -383,7 +384,7 @@ export function renderGapHistogram(data, config) {
                             const bin = bins[items[0].dataIndex];
                             return bin.x0.toFixed(edgeDigits) + '% ~ ' + bin.x1.toFixed(edgeDigits) + '%';
                         },
-                        label: ctx2 => '빈도: ' + ctx2.parsed.y + '일',
+                        label: ctx2 => t('chart.histFreq', { count: ctx2.parsed.y }),
                     },
                 },
             },
@@ -438,7 +439,7 @@ export function renderMarketChart(ranged, seriesDefs) {
                 y: {
                     grid: { color: theme.grid },
                     ticks: { font: { size: 11 }, color: theme.textDim },
-                    title: { display: true, text: '시작점 = 100', font: { size: 11 }, color: theme.textDim },
+                    title: { display: true, text: t('chart.normalizedBase'), font: { size: 11 }, color: theme.textDim },
                 },
             },
             plugins: {
@@ -520,7 +521,7 @@ export function renderTable(periods, config) {
 
     if (!periods || periods.length === 0) {
         table.style.display = 'none';
-        noPeriods.textContent = config.threshold + '% 이상 괴리율 발생 구간이 없습니다.';
+        noPeriods.textContent = t('table.noPeriods', { threshold: config.threshold });
         noPeriods.style.display = 'block';
         return;
     }
@@ -535,7 +536,7 @@ export function renderTable(periods, config) {
             { text: p.start },
             { text: p.end },
             { text: Number(p.max_gap).toFixed(2) + '%', className: 'highlight' },
-            { text: p.duration_days + '일' },
+            { text: t('table.days', { days: p.duration_days }) },
         ];
         cells.forEach(cell => {
             const td = document.createElement('td');

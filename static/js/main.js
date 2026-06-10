@@ -5,6 +5,7 @@
 //
 // URL 파라미터: ?asset=gold|bitcoin|...  ?range=1m|3m|6m|1y|all
 //              ?<asset>_source=<mode>   (intl_modes 보유 자산 — gold는 기존 ?gold_source 그대로)
+//              ?lang=en (영어 모드일 때만 기록 — ko면 파라미터 제거)
 //              ?theme=dark|light ?embed (head 부트 스크립트에서 처리)
 
 import { buildAssetConfigs } from './config.js';
@@ -18,6 +19,7 @@ import { fetchJson, applyClientLiveQuotes } from './live-quotes.js';
 import { gapHistoricalStats, formatHistoricalStats } from './stats.js';
 import { alignSeries, buildCorrelationMatrix, collectMarketSeries, latestWithChange } from './market.js';
 import { decomposePriceChange } from './decompose.js';
+import { t, getLang, setLang, applyStaticStrings, localizeAssetConfig } from './i18n.js';
 
 const THEME_STORAGE_KEY = 'theme';
 
@@ -29,14 +31,16 @@ let currentAsset = 'gold';
 let currentRange = DEFAULT_RANGE;
 const currentIntlModes = {}; // 자산별 선택된 국제가격 기준 모드
 let refreshInFlight = false;
+let lastUpdatedRaw = '';     // updated_at 원문 — 언어 전환 시 접두만 다시 붙여 재표시
 
 function setText(id, text) {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
 }
 
-function setUpdatedAt(text) {
-    setText('updated-at', text);
+function setUpdatedAt(raw) {
+    lastUpdatedRaw = raw || '';
+    setText('updated-at', lastUpdatedRaw ? t('updated.prefix') + lastUpdatedRaw : '');
 }
 
 // 브라우저 합성 시세 사용 중일 때만 '실시간 근사' 배지 노출.
@@ -56,13 +60,21 @@ function rebuildConfigs() {
 
 // 자산 설정 + 데이터가 내려준 국내 라벨 반영(기존 USDT domestic_label 특례의 일반화):
 // data.domestic_label이 있으면 국내 라벨과 출처 요약의 '국내:' 첫 구절을 교체한다.
+// 언어 적용(localizeAssetConfig)도 여기서 — 모든 표시 경로가 이 함수를 거친다.
 function resolveAssetConfig(asset, data) {
-    const config = { ...assetConfigs[asset] };
+    const base = assetConfigs[asset];
+    const config = { ...localizeAssetConfig(base) };
     if (data.domestic_label) {
-        config.domesticLabel = data.domestic_label;
-        if (config.sourceSummary && config.sourceSummary.startsWith('국내: ')) {
+        // EN 모드에서는 키 기반 사전 번역을 우선하되, 데이터가 meta와 다른 라벨을
+        // 내려보내면(거래소 변경 등) 원문을 그대로 노출한다(한국어 폴백 규칙).
+        if (getLang() !== 'en' || data.domestic_label !== base.domesticLabel) {
+            config.domesticLabel = data.domestic_label;
+        }
+        const prefix = ['국내: ', 'Domestic: ']
+            .find(p => config.sourceSummary && config.sourceSummary.startsWith(p));
+        if (prefix) {
             const parts = config.sourceSummary.split(' · ');
-            parts[0] = '국내: ' + data.domestic_label;
+            parts[0] = prefix + config.domesticLabel;
             config.sourceSummary = parts.join(' · ');
         }
     }
@@ -119,6 +131,20 @@ function syncUrl(asset, config, mode) {
         url.searchParams.set(asset + '_source', mode);
     }
     url.searchParams.set('range', currentRange);
+    applyLangParam(url);
+    window.history.replaceState(null, '', url);
+}
+
+// lang은 'en'일 때만 기록, 'ko'(기본)면 파라미터 제거.
+function applyLangParam(url) {
+    if (getLang() === 'en') url.searchParams.set('lang', 'en');
+    else url.searchParams.delete('lang');
+}
+
+// 데이터 미로드 상태(로딩 실패 등)에서도 언어 전환이 URL에 반영되도록 하는 단독 경로.
+function syncLangToUrl() {
+    const url = new URL(window.location.href);
+    applyLangParam(url);
     window.history.replaceState(null, '', url);
 }
 
@@ -152,7 +178,7 @@ function updateModeToggle(config, mode) {
         return;
     }
     toggle.hidden = false;
-    toggle.setAttribute('aria-label', config.label + ' 국제가격 기준 선택');
+    toggle.setAttribute('aria-label', t('intlMode.ariaLabeled', { label: config.label }));
     Object.values(config.intlModes).forEach(modeConfig => {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -177,7 +203,8 @@ function renderRangeToggle() {
         btn.type = 'button';
         btn.className = 'mode-btn';
         btn.dataset.range = option.key;
-        btn.textContent = option.label;
+        // '전체'만 한국어 라벨 — 언어에 따라 치환(나머지 1M/3M/...은 중립).
+        btn.textContent = option.key === 'all' ? t('range.all') : option.label;
         btn.addEventListener('click', () => {
             if (currentRange === option.key) return;
             currentRange = option.key;
@@ -205,7 +232,7 @@ function setRefreshButtonState(isBusy) {
     if (!refreshBtn) return;
     refreshBtn.disabled = isBusy;
     refreshBtn.classList.toggle('is-refreshing', isBusy);
-    refreshBtn.textContent = isBusy ? '새로고침 중...' : '새로고침';
+    refreshBtn.textContent = isBusy ? t('refresh.busy') : t('refresh');
 }
 
 async function loadData({ showLoading = true, bustCache = false } = {}) {
@@ -241,7 +268,7 @@ async function loadData({ showLoading = true, bustCache = false } = {}) {
         document.getElementById('content').style.display = 'block';
 
         if (allData.updated_at) {
-            setUpdatedAt('최종 업데이트: ' + allData.updated_at);
+            setUpdatedAt(allData.updated_at);
         }
 
         const requestedAsset = getRequestedAsset();
@@ -256,7 +283,7 @@ async function loadData({ showLoading = true, bustCache = false } = {}) {
         }
         document.getElementById('error').style.display = 'block';
         document.querySelector('.error-msg').textContent =
-            '데이터 로딩 실패: ' + e.message;
+            t('error.load', { message: e.message });
     } finally {
         setRefreshButtonState(false);
     }
@@ -286,12 +313,12 @@ async function refreshCurrentData() {
             setLiveBadge(true); // 브라우저 합성 시세 — 근사 배지 표시
         }
         if (allData.updated_at) {
-            setUpdatedAt('최종 업데이트: ' + allData.updated_at);
+            setUpdatedAt(allData.updated_at);
         }
         switchTab(currentAsset);
     } catch (e) {
         document.getElementById('error').style.display = 'block';
-        document.querySelector('.error-msg').textContent = '현재가 갱신 실패: ' + e.message;
+        document.querySelector('.error-msg').textContent = t('error.refresh', { message: e.message });
     } finally {
         setRefreshButtonState(false);
     }
@@ -340,9 +367,9 @@ function switchTab(asset) {
     updateCards(rangedData, config, activeData, data);
     updateDecomposition(activeData);
 
-    setText('price-chart-title', config.label + ' 가격 비교 (' + chartConfig.unit + ')');
-    setText('table-title', chartConfig.threshold + '% 이상 괴리율 발생 구간');
-    setText('high-gap-label', chartConfig.threshold + '%+ 발생');
+    setText('price-chart-title', t('chart.priceTitle', { label: config.label, unit: chartConfig.unit }));
+    setText('table-title', t('table.title', { threshold: chartConfig.threshold }));
+    setText('high-gap-label', t('card.highGap', { threshold: chartConfig.threshold }));
 
     destroyCharts();
     applyChartDefaults();
@@ -403,13 +430,13 @@ function updateDecomposition(activeData) {
     section.hidden = !result;
     if (!result) return;
 
-    setText('decomp-headline', '선택 기간 국내 가격 ' + formatSignedPct(result.dom, '%'));
+    setText('decomp-headline', t('decomp.headline', { value: formatSignedPct(result.dom, '%') }));
     setText('decomp-dates', result.startDate + ' → ' + result.endDate);
 
     const rows = [
-        { label: '국제 가격', value: result.usd },
-        { label: '환율 (USD/KRW)', value: result.fx },
-        { label: '김치프리미엄', value: result.gap },
+        { label: t('decomp.intl'), value: result.usd },
+        { label: t('decomp.fx'), value: result.fx },
+        { label: t('decomp.gap'), value: result.gap },
     ];
     const maxAbs = Math.max(...rows.map(row => Math.abs(row.value)));
     const wrap = document.getElementById('decomp-rows');
@@ -437,7 +464,7 @@ function fillMarketCard(idPrefix, stats, format) {
         return;
     }
     const sign = stats.changePct > 0 ? '+' : '';
-    deltaEl.textContent = sign + stats.changePct.toFixed(2) + '% 전일 대비';
+    deltaEl.textContent = t('market.delta', { value: sign + stats.changePct.toFixed(2) });
     if (stats.changePct > 0) deltaEl.classList.add('up');
     else if (stats.changePct < 0) deltaEl.classList.add('down');
 }
@@ -452,7 +479,9 @@ function updateMarketSection() {
     section.hidden = !hasMarket;
     if (!hasMarket) return; // 시장 차트 인스턴스는 switchTab의 destroyCharts가 이미 정리
 
-    const collected = collectMarketSeries(allData); // [{key, label, color, dates, values}]
+    // [{key, label, color, dates, values}] — 한국어 라벨('금 (XAU)')만 언어에 따라 치환.
+    const collected = collectMarketSeries(allData).map(def =>
+        def.key === 'gold' ? { ...def, label: t('market.seriesGold') } : def);
     const byKey = {};
     collected.forEach(def => { byKey[def.key] = def; });
 
@@ -492,7 +521,7 @@ function updateCards(rangedData, config, activeData, assetData) {
     setText('current-gap', lastGap.toFixed(2) + '%');
     setText('max-gap', maxGap.toFixed(2) + '%');
     setText('avg-gap', avgGap.toFixed(2) + '%');
-    setText('high-gap-count', rangedData.high_gap_periods.length + '회');
+    setText('high-gap-count', t('card.highGapCount', { count: rangedData.high_gap_periods.length }));
 
     // 역사적 위치는 조회 기간과 무관하게 전체 기간(activeData)을 기준으로 한다.
     const histText = formatHistoricalStats(gapHistoricalStats(activeData.gap_pct));
@@ -540,7 +569,7 @@ function updateDetailCards(assetData, config, activeData) {
 
     setText('detail-usd-krw', formatKrw(lastUsdKrw, { maximumFractionDigits: 2 }));
 
-    setText('detail-domestic-label', config.unit === 'KRW/g' ? '국내가격 (원/g)' : '국내가격');
+    setText('detail-domestic-label', config.unit === 'KRW/g' ? t('detail.domesticPerGram') : t('detail.domestic'));
     setText('detail-domestic-value', formatAssetKrw(lastDomestic,
         typeof config.krwFractionDigits === 'number' ? config.krwFractionDigits : undefined));
     setText('detail-domestic-sub', config.domesticLabel);
@@ -560,7 +589,7 @@ function updateDetailCards(assetData, config, activeData) {
         return;
     }
 
-    setText('detail-intl-primary-label', '국제가격 (KRW 환산)');
+    setText('detail-intl-primary-label', t('detail.intlKrw'));
     setText('detail-intl-primary-value', formatAssetKrw(lastIntl,
         typeof config.krwFractionDigits === 'number' ? config.krwFractionDigits : undefined));
     const usdKey = findUsdSeriesKey(activeData);
@@ -576,8 +605,8 @@ function updateDetailCards(assetData, config, activeData) {
 function updateThemeButtonLabel() {
     const themeBtn = document.getElementById('themeToggle');
     if (!themeBtn) return;
-    themeBtn.setAttribute('aria-label', currentTheme === 'dark' ? '일반 모드로 전환' : '다크 모드로 전환');
-    themeBtn.title = '테마 전환';
+    themeBtn.setAttribute('aria-label', currentTheme === 'dark' ? t('theme.toLight') : t('theme.toDark'));
+    themeBtn.title = t('theme.title');
 }
 
 function applyTheme(theme, { persist = true, rerender = true } = {}) {
@@ -613,6 +642,28 @@ function bindRefreshButton() {
     refreshBtn.addEventListener('click', refreshCurrentData);
 }
 
+// ----- 언어 토글 -----
+
+// 언어 전환 후 전체 재렌더: 정적 라벨 → 기간 토글('전체'/'All') → URL →
+// 데이터가 있으면 switchTab(카드/차트/테이블/분해 패널/시장 섹션까지 일괄 갱신).
+function onLanguageChanged() {
+    applyStaticStrings();
+    updateThemeButtonLabel();
+    renderRangeToggle();
+    setUpdatedAt(lastUpdatedRaw);
+    syncLangToUrl();
+    if (allData && allData[currentAsset]) switchTab(currentAsset);
+}
+
+function bindLangButton() {
+    const langBtn = document.getElementById('langToggle');
+    if (!langBtn) return;
+    langBtn.addEventListener('click', () => {
+        setLang(getLang() === 'en' ? 'ko' : 'en');
+        onLanguageChanged();
+    });
+}
+
 // ----- 부트스트랩 -----
 
 // 서비스워커 등록(PWA 오프라인 캐시) — 상대 경로라 GitHub Pages 서브패스(/gold_gap/)와
@@ -622,6 +673,7 @@ if ('serviceWorker' in navigator) {
         .catch(err => console.warn('서비스워커 등록 실패:', err));
 }
 
+applyStaticStrings();    // data-i18n 정적 라벨을 현재 언어로 — 모듈은 defer라 FOUC 최소
 readRequestedRange();
 rebuildConfigs();        // 데이터 로드 전에는 폴백 설정으로 탭/기본 상태 구성
 renderTabs();
@@ -629,4 +681,5 @@ renderRangeToggle();
 applyChartDefaults();
 bindThemeButton();
 bindRefreshButton();
+bindLangButton();
 loadData();

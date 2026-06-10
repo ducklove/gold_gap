@@ -1,8 +1,11 @@
 // stats.js — 괴리율 통계 (순수 함수, DOM 의존 없음).
+// 표시 문자열(formatHistoricalStats)만 i18n의 현재 언어를 따른다.
 //
 // "지금 괴리율이 역사적으로 어느 위치인가"에 답한다:
 // - percentile: 전체 기간에서 현재값 이하인 날의 비율 (서명값 기준, 0~100 정수)
 // - z: (현재값 − 평균) / 표준편차 (모표준편차). 분산이 0이면 null.
+
+import { t, getLang } from './i18n.js';
 
 export function gapHistoricalStats(gaps) {
     const values = (gaps || []).filter(v => typeof v === 'number' && !Number.isNaN(v));
@@ -81,8 +84,9 @@ export function formatHistoricalStats(stats) {
     const zText = stats.z != null
         ? 'z ' + (stats.z >= 0 ? '+' : '') + stats.z.toFixed(2) + ' · '
         : '';
+    const countText = stats.count.toLocaleString(getLang() === 'en' ? 'en-US' : 'ko-KR');
     return {
-        value: '백분위 ' + stats.percentile + '%',
-        sub: zText + '전체 ' + stats.count.toLocaleString('ko-KR') + '일 기준',
+        value: t('stats.percentile', { value: stats.percentile }),
+        sub: zText + t('stats.basis', { count: countText }),
     };
 }

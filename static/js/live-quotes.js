@@ -3,6 +3,7 @@
 
 import { roundNumber, latestValue, getKstDateString, getKstTimeString } from './format.js';
 import { buildHighGapPeriods } from './periods.js';
+import { t } from './i18n.js';
 
 export const TROY_OZ_TO_GRAM = 31.1035;
 
@@ -93,7 +94,7 @@ async function fetchClientLiveQuotes() {
 // allData에 현재가를 합성한다. configs는 buildAssetConfigs 결과의 configs 맵 —
 // 임계치만 사용하며, 설정이 없으면 5%로 둔다. 반환값은 합성된 시리즈 수.
 export async function applyClientLiveQuotes(allData, configs) {
-    if (!allData) throw new Error('기준 데이터가 아직 로드되지 않았습니다.');
+    if (!allData) throw new Error(t('live.noBaseData'));
     const thresholdOf = key => (configs && configs[key] && typeof configs[key].threshold === 'number')
         ? configs[key].threshold
         : 5;
@@ -146,7 +147,8 @@ export async function applyClientLiveQuotes(allData, configs) {
         applied++;
     }
 
-    if (!applied) throw new Error('브라우저에서 접근 가능한 현재가 API 응답이 없습니다.');
-    allData.updated_at = '브라우저 현재가 갱신: ' + getKstTimeString();
+    if (!applied) throw new Error(t('live.noQuotes'));
+    // 갱신 시점 언어로 기록된다 — 이후 언어를 전환해도 다음 갱신 전까지는 이 문구가 남는다.
+    allData.updated_at = t('live.updatedPrefix') + getKstTimeString();
     return applied;
 }

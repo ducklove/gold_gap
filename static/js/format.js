@@ -1,4 +1,7 @@
 // format.js — 숫자/통화 포맷터와 KST 날짜 유틸. 순수 함수만 두며 DOM에 의존하지 않는다.
+// 통화 단위 표기('원'/'KRW')만 i18n의 현재 언어를 따른다 — ko 출력은 기존과 동일.
+
+import { getLang } from './i18n.js';
 
 export function roundNumber(value, digits = 2) {
     if (value == null || Number.isNaN(Number(value))) return null;
@@ -26,6 +29,18 @@ export function getKstDateString(date = new Date()) {
 }
 
 export function getKstTimeString(date = new Date()) {
+    // EN 모드는 ISO 유사 표기(en-CA, 24시간) — ko 출력은 기존 그대로 유지.
+    if (getLang() === 'en') {
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }).format(date);
+    }
     return new Intl.DateTimeFormat('ko-KR', {
         timeZone: 'Asia/Seoul',
         year: 'numeric',
@@ -36,15 +51,20 @@ export function getKstTimeString(date = new Date()) {
     }).format(date).replace(/\.$/, '');
 }
 
+// 원화 단위 접미사 — ko ' 원', en ' KRW' (suffix가 '/g'면 ' 원/g' / ' KRW/g').
+function krwSuffix(perUnit = '') {
+    return (getLang() === 'en' ? ' KRW' : ' 원') + perUnit;
+}
+
 // 차트 툴팁용 가격 포맷. unit이 'KRW/g'(금)이면 '원/g', 그 외에는 '원'.
 export function formatPrice(value, unit) {
-    if (unit === 'KRW/g') return Number(value).toLocaleString() + ' 원/g';
-    return Number(value).toLocaleString() + ' 원';
+    if (unit === 'KRW/g') return Number(value).toLocaleString() + krwSuffix('/g');
+    return Number(value).toLocaleString() + krwSuffix();
 }
 
 export function formatKrw(value, options = {}) {
     if (value == null || Number.isNaN(Number(value))) return '-';
-    return Number(value).toLocaleString('ko-KR', options) + ' 원';
+    return Number(value).toLocaleString('ko-KR', options) + krwSuffix();
 }
 
 export function formatUsd(value, options = {}) {
