@@ -40,6 +40,22 @@ def config_json():
     return response
 
 
+@app.route("/sw.js")
+def sw_js():
+    """리포 루트 sw.js 서빙 — 서비스 워커는 즉시 갱신돼야 하므로 no-cache."""
+    response = send_from_directory(BASE_DIR, "sw.js")
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route("/manifest.webmanifest")
+def manifest_webmanifest():
+    """리포 루트 manifest.webmanifest 서빙 — PWA 매니페스트 mimetype 명시."""
+    response = send_from_directory(BASE_DIR, "manifest.webmanifest", mimetype="application/manifest+json")
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.route("/api/data")
 def api_data():
     try:
