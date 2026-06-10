@@ -28,6 +28,9 @@ METADATA_KEYS = [
     "sources",
 ]
 
+# market 블록 시리즈 키 — 자산 페이로드와 달리 결측(null)이 정상 상태(휴장일)
+MARKET_SERIES_KEYS = ["kospi", "sp500", "usd_krw"]
+
 
 def get_last_date(asset_data):
     """자산 데이터에서 마지막 날짜 추출"""
@@ -37,14 +40,15 @@ def get_last_date(asset_data):
 
 
 def compute_incremental_start_dates(existing_data, overlap_days=OVERLAP_DAYS):
-    """자산별 증분 fetch 시작일 계산 (마지막 날짜 - overlap_days).
+    """자산·market별 증분 fetch 시작일 계산 (마지막 날짜 - overlap_days).
 
-    기존 데이터가 없거나 자산이 비어 있으면 해당 키를 생략한다 → 전체 fetch.
+    기존 데이터가 없거나 해당 블록이 비어 있으면 키를 생략한다 → 전체 fetch.
+    market을 포함해야 공통 환율(fx) fetch 시작일(min)이 market 범위도 덮는다.
     """
     start_dates = {}
     if not existing_data:
         return start_dates
-    for name in ASSETS:
+    for name in [*ASSETS, "market"]:
         last = get_last_date(existing_data.get(name))
         if last:
             start_dates[name] = last - timedelta(days=overlap_days)
@@ -104,5 +108,38 @@ def merge_asset_data(old_data, new_data, threshold):
                 merged["intl_modes"][mode] = merge_asset_data(old_mode, new_mode, threshold)
             else:
                 merged["intl_modes"][mode] = new_mode or old_mode
+
+    return merged
+
+
+def merge_market_data(old_data, new_data):
+    """market 블록 병합: 날짜 합집합, 겹치는 날짜는 새 값 우선.
+
+    자산 병합과 달리 결측(null)이 정상 상태(휴장일)라 필수 필드 기준으로
+    행을 제외하지 않으며, periods 재계산도 없다. 새 값이 null이면 기존
+    값을 덮어쓰지 않는다 — 한쪽 지수만 갱신돼도 기존 관측값을 보존한다.
+    """
+    if not old_data:
+        return new_data
+    if not new_data:
+        return old_data
+
+    combined = {}
+    for source in [old_data, new_data]:
+        for i, d in enumerate(source["dates"]):
+            row = combined.setdefault(d, {})
+            for key in MARKET_SERIES_KEYS:
+                values = source.get(key)
+                if values and i < len(values) and values[i] is not None:
+                    row[key] = values[i]
+
+    sorted_dates = sorted(combined)
+    merged = {"dates": sorted_dates}
+    for key in MARKET_SERIES_KEYS:
+        merged[key] = [combined[d].get(key) for d in sorted_dates]
+
+    sources = new_data.get("sources") or old_data.get("sources")
+    if sources:
+        merged["sources"] = sources
 
     return merged

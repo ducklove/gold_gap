@@ -54,7 +54,8 @@ def main():
     if data is None:
         if existing_data:
             print("Using existing data.json as fallback")
-            data = {k: v for k, v in existing_data.items() if k in ASSETS}
+            # 자산 + market 블록 보존 (updated_at/meta는 아래에서 새로 부착)
+            data = {k: v for k, v in existing_data.items() if k in ASSETS or k == "market"}
         else:
             print("ERROR: No data available", file=sys.stderr)
             sys.exit(1)

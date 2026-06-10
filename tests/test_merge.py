@@ -126,9 +126,9 @@ def test_compute_incremental_start_dates(golden_data):
     from datetime import datetime, timedelta
 
     starts = compute_incremental_start_dates(golden_data)
-    # 골든 데이터에 존재하는 레지스트리 자산 전체 — 자산 추가에 따라 자동 확장
+    # 골든 데이터에 존재하는 레지스트리 자산 + market — 블록 추가에 따라 자동 확장
     from goldgap.assets import ASSETS
-    expected = {key for key in ASSETS if (golden_data.get(key) or {}).get("dates")}
+    expected = {key for key in [*ASSETS, "market"] if (golden_data.get(key) or {}).get("dates")}
     assert starts and set(starts) == expected
     for key in starts:
         last = datetime.strptime(golden_data[key]["dates"][-1], "%Y-%m-%d")

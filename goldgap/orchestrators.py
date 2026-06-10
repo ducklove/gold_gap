@@ -3,16 +3,26 @@
 import logging
 
 from goldgap import cache
-from goldgap.assets import get_threshold
+from goldgap.assets import ASSETS, get_threshold
 from goldgap.domain.gap import calculate_gap
-from goldgap.domain.merge import compute_incremental_start_dates, merge_asset_data
+from goldgap.domain.merge import (
+    compute_incremental_start_dates,
+    merge_asset_data,
+    merge_market_data,
+)
 from goldgap.domain.periods import find_high_gap_periods
-from goldgap.serialize import build_meta, format_updated_at, serialize_asset_data
+from goldgap.serialize import (
+    build_meta,
+    format_updated_at,
+    serialize_asset_data,
+    serialize_market_data,
+)
 from goldgap.sources.bithumb import fetch_bithumb_ohlcv
 from goldgap.sources.upbit import fetch_upbit_ohlcv
 from goldgap.sources.wgc import fetch_london_spot_gold
 from goldgap.sources.yahoo import (
     fetch_exchange_rate,
+    fetch_index_series,
     fetch_international_crypto,
     fetch_krx_gold,
     fetch_new_york_gold_futures,
@@ -148,12 +158,40 @@ def get_usdt_data(fx_df, start_date=None):
     return data
 
 
-def fetch_fresh(existing_data=None):
-    """세 자산을 순차 fetch (기존 데이터가 있으면 증분 업데이트 후 병합).
+def get_market_data(fx_df, start_date=None):
+    """시장 지표(KOSPI·S&P500·환율) 오케스트레이터 — data.json 'market' 블록.
 
-    개별 자산 실패 시 기존 데이터를 유지하고, 결과가 하나도 없으면
-    RuntimeError를 던진다 (호출 측에서 전체 폴백 처리).
-    반환값은 자산 키만 담는다 — updated_at/meta는 호출 측에서 부착.
+    자산과 달리 한국/미국 휴장일이 서로 달라 outer join 합집합 날짜에
+    결측은 null로 직렬화한다 (serialize_market_data). 두 지수 중 하나라도
+    실패하면 market 전체 실패로 간주한다 — 단순성 우선, fetch_fresh의
+    격리가 기존 market 데이터를 유지해준다.
+    """
+    logger.info("=== Fetching MARKET data ===")
+    kospi_df = fetch_index_series("^KS11", "kospi", start_date)
+    sp500_df = fetch_index_series("^GSPC", "sp500", start_date)
+
+    fx_part = fx_df[["usd_krw"]]
+    if start_date is not None:
+        # fx_df는 전체 자산의 min 시작일 기준이라 더 길 수 있다 — 증분 범위로 절단
+        fx_part = fx_part[fx_part.index >= start_date]
+
+    market_df = kospi_df.join(sp500_df, how="outer").join(fx_part, how="outer")
+    data = serialize_market_data(market_df)
+    data["sources"] = {
+        "kospi": "KOSPI ^KS11 latest/daily close from Yahoo Finance",
+        "sp500": "S&P 500 ^GSPC latest/daily close from Yahoo Finance",
+        "fx": "USD/KRW KRW=X latest/daily close from Yahoo Finance",
+    }
+    return data
+
+
+def fetch_fresh(existing_data=None):
+    """레지스트리 자산과 market 블록을 순차 fetch (기존 데이터가 있으면 증분 병합).
+
+    개별 자산/market 실패 시 기존 데이터를 유지하고, 자산 결과가 하나도
+    없으면 RuntimeError를 던진다 (호출 측에서 전체 폴백 처리 — market만
+    성공해도 자산 없는 data.json은 만들지 않는다).
+    반환값은 자산·market 키만 담는다 — updated_at/meta는 호출 측에서 부착.
     """
     start_dates = compute_incremental_start_dates(existing_data)
 
@@ -196,7 +234,35 @@ def fetch_fresh(existing_data=None):
                 data[name] = existing_data[name]
                 logger.info(f"{name}: kept existing data ({len(existing_data[name]['dates'])} points)")
 
-    if not data:
+    # market 블록 — 자산 루프와 동일한 격리 패턴 (실패 시 기존 유지)
+    market_start = start_dates.get("market")
+    try:
+        market_fx = fx_df
+        if market_start is None and fx_start is not None:
+            # 기존에 market이 없으면 5년 전체 fetch — 증분 fx_df로는 환율
+            # 히스토리가 부족해 usd_krw가 null로 남으므로 전체 환율을 따로 받는다.
+            market_fx = fetch_exchange_rate(None)
+        new_market = get_market_data(market_fx, market_start)
+
+        if market_start and existing_data and existing_data.get("market"):
+            data["market"] = merge_market_data(existing_data["market"], new_market)
+            logger.info(
+                f"market: {len(data['market']['dates'])} points "
+                f"(incremental, +{len(new_market['dates'])} fetched)"
+            )
+        else:
+            data["market"] = new_market
+            logger.info(f"market: {len(data['market']['dates'])} points (full)")
+    except Exception as e:
+        logger.warning(f"market: FAILED - {e}")
+        errors.append("market")
+        if existing_data and existing_data.get("market"):
+            data["market"] = existing_data["market"]
+            logger.info(
+                f"market: kept existing data ({len(existing_data['market']['dates'])} points)"
+            )
+
+    if not any(key in ASSETS for key in data):
         raise RuntimeError(f"All assets failed: {errors}")
 
     return data
@@ -217,6 +283,7 @@ def get_all_data(force_refresh=False):
     data["bitcoin"] = get_bitcoin_data(fx_df)
     data["eth"] = get_eth_data(fx_df)
     data["usdt"] = get_usdt_data(fx_df)
+    data["market"] = get_market_data(fx_df)
     # 정적 data.json과 같은 계약: KST 갱신 시각(BUG-01) + meta 블록
     data["updated_at"] = format_updated_at()
     data["meta"] = build_meta()

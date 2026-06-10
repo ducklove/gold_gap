@@ -107,6 +107,33 @@ def fetch_krx_gold(start_date=None):
     return result
 
 
+def fetch_index_series(ticker, column, start_date=None):
+    """yfinance로 주가지수 종가 시계열 조회 (KOSPI ^KS11, S&P500 ^GSPC 등).
+
+    반환: 단일 컬럼(column) DataFrame, tz-naive 일별 인덱스 + 최신 quote upsert.
+    """
+    end = datetime.now()
+    start = start_date or (end - timedelta(days=5 * 365))
+
+    logger.info(f"Fetching index series ({ticker})...")
+    index = yf.download(ticker, start=start, end=end, progress=False)
+
+    if index.empty:
+        raise ValueError(f"Failed to fetch {ticker} data")
+
+    index = normalize_yfinance_columns(index)
+
+    index_df = index[["Close"]].rename(columns={"Close": column})
+    index_df.index = pd.to_datetime(index_df.index).tz_localize(None)
+    index_df = index_df.dropna()
+
+    latest = latest_yfinance_price(ticker)
+    if latest:
+        index_df = upsert_latest_row(index_df, {column: latest})
+
+    return index_df
+
+
 def fetch_international_crypto(ticker, fx_df, start_date=None):
     """yfinance로 크립토 국제 가격 조회 (BTC-USD, USDT-USD 등)"""
     end = datetime.now()

@@ -72,6 +72,40 @@ def test_cli_fallback_keeps_existing_data_and_attaches_meta(tmp_path, golden_dat
     assert "+09:00" in meta["generated_at"]
 
 
+def test_cli_fallback_preserves_market_block(tmp_path, golden_data):
+    """기존 data.json에 market 블록이 있으면 전체 실패 폴백에서도 보존된다."""
+    fake_market = {
+        "dates": ["2026-06-01", "2026-06-02"],
+        "kospi": [2712.14, None],
+        "sp500": [5352.96, 5354.03],
+        "usd_krw": [1378.5, None],
+        "sources": {"kospi": "test-kospi", "sp500": "test-sp500", "fx": "test-fx"},
+    }
+    seeded = dict(golden_data)  # 골든 픽스처는 불변 — 최상위 키만 추가한 사본
+    seeded["market"] = fake_market
+    with open(tmp_path / "data.json", "w", encoding="utf-8") as f:
+        json.dump(seeded, f, ensure_ascii=False)
+    shutil.copy(os.path.join(REPO_ROOT, "generate_data.py"), tmp_path / "generate_data.py")
+
+    result = subprocess.run(
+        [sys.executable, "generate_data.py"],
+        cwd=tmp_path,
+        env=_offline_env(),
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+
+    with open(tmp_path / "data.json", "r", encoding="utf-8") as f:
+        written = json.load(f)
+
+    assert written["market"] == fake_market, "market block lost in fallback"
+    for asset_key in ["gold", "bitcoin", "eth", "usdt"]:
+        assert written[asset_key] == golden_data[asset_key], f"{asset_key} payload changed"
+
+
 def test_cli_exits_nonzero_without_any_data(tmp_path):
     """기존 data.json도 없고 fetch도 전부 실패하면 exit 1 (cron 실패 신호)."""
     shutil.copy(os.path.join(REPO_ROOT, "generate_data.py"), tmp_path / "generate_data.py")
