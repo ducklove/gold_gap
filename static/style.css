@@ -589,3 +589,90 @@ td.highlight {
 .live-badge[hidden] {
     display: none;
 }
+
+/* ===== 신규 UI: 시장 지표 · 상관관계 섹션 (기존 변수 체계 재사용) ===== */
+
+.market-section {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+
+.market-section[hidden] {
+    display: none;
+}
+
+.market-section-header {
+    margin-bottom: 16px;
+}
+
+.market-section-header h2 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+}
+
+.market-section-note {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+/* 시장 카드는 자산색 강조선 대신 중립 강조선을 쓴다(자산 탭과 독립). */
+.market-cards .card::before {
+    background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.market-cards .card:hover {
+    border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+}
+
+.market-delta {
+    font-weight: 600;
+}
+
+.market-delta.up {
+    color: var(--up);
+}
+
+.market-delta.down {
+    color: var(--down);
+}
+
+/* 상관계수 매트릭스 — 셀 배경은 JS가 값 기반 color-mix로 칠한다. */
+.corr-table {
+    min-width: 560px;
+    text-align: center;
+}
+
+.corr-table thead th {
+    text-align: center;
+    white-space: nowrap;
+}
+
+.corr-table tbody th {
+    background: var(--surface2);
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.corr-table td.corr-cell {
+    text-align: center;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.corr-table tbody tr:hover {
+    background: transparent; /* 값 색상 코딩이 가려지지 않게 행 호버 배경 비활성 */
+}
+
+.corr-caption {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 10px;
+}

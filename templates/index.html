@@ -11,7 +11,12 @@
     <!-- og.png는 데이터 갱신 시 자동 생성돼 data 브랜치에 커밋되고 배포가 사이트 루트로 복사 -->
     <meta property="og:image" content="https://ducklove.github.io/gold_gap/og.png">
     <meta name="twitter:card" content="summary_large_image">
+    <!-- PWA: 상대 경로 manifest — GitHub Pages 서브패스(/gold_gap/)와 Flask 로컬 모두 대응 -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
     <link rel="icon" type="image/svg+xml" href="static/icon.svg?v=1">
+    <link rel="apple-touch-icon" href="static/icons/apple-touch-icon.png">
     <script>
     // FOUC 방지 부트 스크립트 — 인라인 유지(외부 모듈보다 먼저 실행돼야 함).
     // 테마 우선순위: ?theme=dark|light > localStorage > 시스템(prefers-color-scheme) > light.
@@ -171,6 +176,13 @@
                 <canvas id="gapChart"></canvas>
             </section>
 
+            <section class="chart-container" id="gap-histogram-section">
+                <div class="section-header">
+                    <h2>괴리율 분포</h2>
+                </div>
+                <canvas id="gapHistChart"></canvas>
+            </section>
+
             <section class="table-container">
                 <div class="section-header">
                     <h2 id="table-title">괴리율 발생 구간</h2>
@@ -189,6 +201,50 @@
                     </table>
                 </div>
                 <p id="no-periods" style="display:none; text-align:center;"></p>
+            </section>
+
+            <!-- 시장 지표 · 상관관계 — 자산 탭과 무관하게 조회 기간(range)만 따른다.
+                 data.json에 market 블록이 없으면 main.js가 섹션 전체를 숨긴 채 둔다. -->
+            <section class="market-section" id="market-section" hidden>
+                <div class="market-section-header">
+                    <h2>시장 지표 · 상관관계</h2>
+                    <p class="market-section-note">KOSPI · S&amp;P 500 · 환율과 자산 USD 시세 — 자산 탭과 무관하게 선택한 조회 기간을 따릅니다.</p>
+                </div>
+
+                <div class="cards market-cards">
+                    <div class="card">
+                        <div class="card-label">KOSPI</div>
+                        <div class="card-value" id="market-kospi-value">-</div>
+                        <div class="card-sub market-delta" id="market-kospi-delta"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-label">S&amp;P 500</div>
+                        <div class="card-value" id="market-sp500-value">-</div>
+                        <div class="card-sub market-delta" id="market-sp500-delta"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-label">USD/KRW</div>
+                        <div class="card-value" id="market-usdkrw-value">-</div>
+                        <div class="card-sub market-delta" id="market-usdkrw-delta"></div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <div class="section-header">
+                        <h2>정규화 비교 (시작점 = 100)</h2>
+                    </div>
+                    <canvas id="marketChart"></canvas>
+                </div>
+
+                <div class="table-container">
+                    <div class="section-header">
+                        <h2>상관계수 매트릭스</h2>
+                    </div>
+                    <div class="table-scroll">
+                        <table id="corrTable" class="corr-table"></table>
+                    </div>
+                    <p class="corr-caption">일별 로그수익률 · 쌍별 완전 관측 · 표본 20 미만 '-'</p>
+                </div>
             </section>
         </div>
 

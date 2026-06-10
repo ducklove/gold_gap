@@ -74,20 +74,26 @@ function shiftIsoMonths(iso, months) {
     return shifted.toISOString().slice(0, 10);
 }
 
+// 오름차순 ISO 날짜 배열에서 rangeKey 범위의 시작 인덱스를 반환(마지막 일자 기준).
+// 전체 범위('all'/빈 배열)는 0, 모든 데이터가 범위 밖이면 최신 1점만 남도록 length-1.
+// sliceDataByRange와 시장 섹션(main.js)이 같은 컷오프 규칙을 공유하기 위한 유틸.
+export function rangeStartIndex(dates, rangeKey) {
+    if (!Array.isArray(dates) || dates.length === 0) return 0;
+    const option = RANGE_OPTIONS.find(o => o.key === rangeKey);
+    const months = option && option.months;
+    if (!months) return 0;
+    const cutoff = shiftIsoMonths(dates[dates.length - 1], months);
+    const startIdx = dates.findIndex(date => date >= cutoff);
+    return startIdx === -1 ? dates.length - 1 : startIdx;
+}
+
 // 시리즈를 마지막 데이터 일자 기준 rangeKey 범위로 슬라이스한 새 객체를 반환.
 // - dates와 길이가 같은 모든 배열 시리즈를 함께 슬라이스
 // - high_gap_periods는 슬라이스된 범위에서 buildHighGapPeriods로 재계산
 // - 'all'(또는 전체가 범위 안)이면 원본 객체를 그대로 반환(백엔드 계산 high_gap_periods 유지)
 export function sliceDataByRange(data, rangeKey, threshold) {
     if (!data || !Array.isArray(data.dates) || data.dates.length === 0) return data;
-    const option = RANGE_OPTIONS.find(o => o.key === rangeKey);
-    const months = option && option.months;
-    if (!months) return data;
-
-    const lastDate = data.dates[data.dates.length - 1];
-    const cutoff = shiftIsoMonths(lastDate, months);
-    let startIdx = data.dates.findIndex(date => date >= cutoff);
-    if (startIdx === -1) startIdx = data.dates.length - 1; // 모든 데이터가 범위 밖이면 최신 1점만 유지
+    const startIdx = rangeStartIndex(data.dates, rangeKey);
     if (startIdx <= 0) return data;
 
     const total = data.dates.length;

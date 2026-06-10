@@ -8,11 +8,15 @@
 //              ?theme=dark|light ?embed (head 부트 스크립트에서 처리)
 
 import { buildAssetConfigs } from './config.js';
-import { RANGE_OPTIONS, DEFAULT_RANGE, isValidRange, sliceDataByRange } from './periods.js';
+import { RANGE_OPTIONS, DEFAULT_RANGE, isValidRange, sliceDataByRange, rangeStartIndex } from './periods.js';
 import { latestValue, formatKrw, formatUsd, formatAssetKrw } from './format.js';
-import { applyChartDefaults, destroyCharts, renderPriceChart, renderGapChart, renderTable } from './charts.js';
+import {
+    applyChartDefaults, destroyCharts, renderPriceChart, renderGapChart, renderGapHistogram,
+    renderTable, renderMarketChart, renderCorrelationTable,
+} from './charts.js';
 import { fetchJson, applyClientLiveQuotes } from './live-quotes.js';
 import { gapHistoricalStats, formatHistoricalStats } from './stats.js';
+import { alignSeries, buildCorrelationMatrix, collectMarketSeries, latestWithChange } from './market.js';
 
 const THEME_STORAGE_KEY = 'theme';
 
@@ -342,7 +346,74 @@ function switchTab(asset) {
     applyChartDefaults();
     renderPriceChart(rangedData, chartConfig);
     renderGapChart(rangedData, chartConfig);
+    renderGapHistogram(rangedData, chartConfig);
     renderTable(rangedData.high_gap_periods, chartConfig);
+
+    // 시장 섹션은 자산 탭과 무관하게 currentRange만 따르지만, 구현 단순화를 위해
+    // 모든 재렌더 경로(탭/기간/테마/데이터 갱신)가 모이는 이곳에서 함께 갱신한다.
+    updateMarketSection();
+}
+
+// ----- 시장 지표 · 상관관계 섹션 -----
+
+// 지수(KOSPI/S&P500) 카드 값 포맷 — 소수 2자리 고정.
+function formatIndexValue(value) {
+    return Number(value).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// 시장 카드 1장 채우기. stats는 latestWithChange 결과(없으면 null → '-').
+// 전일 대비: 상승 빨강(--up)·하락 파랑(--down) — 국내 관례.
+function fillMarketCard(idPrefix, stats, format) {
+    setText(idPrefix + '-value', stats ? format(stats.value) : '-');
+    const deltaEl = document.getElementById(idPrefix + '-delta');
+    if (!deltaEl) return;
+    deltaEl.classList.remove('up', 'down');
+    if (!stats || stats.changePct == null) {
+        deltaEl.textContent = '';
+        return;
+    }
+    const sign = stats.changePct > 0 ? '+' : '';
+    deltaEl.textContent = sign + stats.changePct.toFixed(2) + '% 전일 대비';
+    if (stats.changePct > 0) deltaEl.classList.add('up');
+    else if (stats.changePct < 0) deltaEl.classList.add('down');
+}
+
+// market 블록이 있으면 카드/비교 차트/상관 매트릭스를 currentRange 기준으로 갱신하고,
+// 없으면(현행 data.json 포함) 섹션 전체를 숨긴 채 둔다 — 에러 없이 동작해야 하는 절대 요건.
+function updateMarketSection() {
+    const section = document.getElementById('market-section');
+    if (!section) return;
+    const market = allData && allData.market;
+    const hasMarket = !!(market && Array.isArray(market.dates) && market.dates.length > 0);
+    section.hidden = !hasMarket;
+    if (!hasMarket) return; // 시장 차트 인스턴스는 switchTab의 destroyCharts가 이미 정리
+
+    const collected = collectMarketSeries(allData); // [{key, label, color, dates, values}]
+    const byKey = {};
+    collected.forEach(def => { byKey[def.key] = def; });
+
+    // 카드 3장: 최신 유효 관측 + 직전 유효 관측 대비(휴장 null은 건너뜀).
+    fillMarketCard('market-kospi', byKey.kospi && latestWithChange(byKey.kospi.values), formatIndexValue);
+    fillMarketCard('market-sp500', byKey.sp500 && latestWithChange(byKey.sp500.values), formatIndexValue);
+    fillMarketCard('market-usdkrw', byKey.usd_krw && latestWithChange(byKey.usd_krw.values),
+        v => formatKrw(v, { maximumFractionDigits: 2 }));
+
+    // 합집합 날짜 축으로 정렬 후 조회 기간으로 슬라이스 — 차트/상관이 같은 행을 공유.
+    const seriesMap = {};
+    collected.forEach(def => { seriesMap[def.key] = { dates: def.dates, values: def.values }; });
+    const aligned = alignSeries(seriesMap);
+    const startIdx = rangeStartIndex(aligned.dates, currentRange);
+    const ranged = { dates: startIdx > 0 ? aligned.dates.slice(startIdx) : aligned.dates };
+    collected.forEach(def => {
+        const values = aligned.series[def.key];
+        ranged[def.key] = startIdx > 0 ? values.slice(startIdx) : values;
+    });
+
+    renderMarketChart(ranged, collected);
+
+    const corrMap = {};
+    collected.forEach(def => { corrMap[def.label] = { dates: ranged.dates, values: ranged[def.key] }; });
+    renderCorrelationTable(buildCorrelationMatrix(corrMap));
 }
 
 // 통계 카드는 조회 기간(rangedData) 기준, 상세 카드의 '현재' 값은 최신 지점 기준.
@@ -479,6 +550,13 @@ function bindRefreshButton() {
 }
 
 // ----- 부트스트랩 -----
+
+// 서비스워커 등록(PWA 오프라인 캐시) — 상대 경로라 GitHub Pages 서브패스(/gold_gap/)와
+// Flask 로컬 모두에서 동작. 등록 실패는 치명적이지 않으므로 콘솔 경고만 남긴다.
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+        .catch(err => console.warn('서비스워커 등록 실패:', err));
+}
 
 readRequestedRange();
 rebuildConfigs();        // 데이터 로드 전에는 폴백 설정으로 탭/기본 상태 구성

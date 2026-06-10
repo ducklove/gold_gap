@@ -32,6 +32,8 @@ jobs:
           mkdir -p _site
           cp templates/index.html _site/index.html
           cp -r static _site/static
+          cp sw.js _site/sw.js
+          cp manifest.webmanifest _site/manifest.webmanifest
           cp config.json _site/config.json
           cp data.json _site/data.json
           if [ -s og.png ]; then cp og.png _site/og.png; fi

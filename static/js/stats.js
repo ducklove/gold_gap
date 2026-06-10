@@ -24,6 +24,57 @@ export function gapHistoricalStats(gaps) {
     };
 }
 
+// '보기 좋은' bin 폭 사다리: 0.1/0.2/0.25/0.5 × 10^k (0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, …).
+// rawWidth 이상인 가장 작은 값을 고른다. 최소 폭은 0.1(괴리율 % 표시에 충분한 해상도).
+const NICE_STEPS = [0.1, 0.2, 0.25, 0.5];
+
+function niceBinWidth(rawWidth) {
+    let scale = 1;
+    for (let k = 0; k < 12; k++) {
+        for (const step of NICE_STEPS) {
+            const width = step * scale;
+            if (width >= rawWidth - 1e-12) return width;
+        }
+        scale *= 10;
+    }
+    return NICE_STEPS[0] * scale;
+}
+
+// 부동소수 노이즈(0.30000000000000004 등) 제거용 — bin 폭이 0.1 이상이므로 6자리면 충분.
+function cleanEdge(value) {
+    return Math.round(value * 1e6) / 1e6;
+}
+
+// 괴리율 분포 히스토그램. null/NaN을 제거한 뒤 min~max를 '보기 좋은' 폭의
+// bin으로 나눈다(경계는 폭의 배수에 정렬 — 0이 항상 bin 경계에 온다).
+// 반환: { bins: [{x0, x1, count}], binWidth } — 마지막 bin은 x1을 포함. 빈 입력은 null.
+export function buildGapHistogram(gaps, targetBins = 30) {
+    const values = (gaps || []).filter(v => typeof v === 'number' && Number.isFinite(v));
+    if (!values.length) return null;
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min;
+    const binWidth = niceBinWidth(span > 0 ? span / targetBins : 0);
+
+    // 시작 경계를 binWidth 배수로 내림 정렬(+엡실론: min이 정확히 경계일 때 흔들림 방지).
+    const start = Math.floor(min / binWidth + 1e-9) * binWidth;
+    const binCount = Math.max(1, Math.ceil((max - start) / binWidth - 1e-9));
+
+    const counts = new Array(binCount).fill(0);
+    values.forEach(v => {
+        const idx = Math.floor((v - start) / binWidth + 1e-9);
+        counts[Math.min(binCount - 1, Math.max(0, idx))] += 1; // max는 마지막 bin에 포함
+    });
+
+    const bins = counts.map((count, i) => ({
+        x0: cleanEdge(start + i * binWidth),
+        x1: cleanEdge(start + (i + 1) * binWidth),
+        count,
+    }));
+    return { bins, binWidth };
+}
+
 // 통계 카드 표시용 문자열 쌍 {value, sub}. 표본 부족 시 null.
 export function formatHistoricalStats(stats) {
     if (!stats) return null;

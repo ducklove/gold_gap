@@ -1,13 +1,17 @@
-// charts.js — Chart.js 렌더링(가격/괴리율 차트, 하이라이트 박스, 구간 테이블).
+// charts.js — Chart.js 렌더링(가격/괴리율/분포/시장 비교 차트, 하이라이트 박스, 테이블).
 //
 // 전역 Chart와 annotation 플러그인은 index.html <head>의 클래식 CDN <script>가
 // 로드한다. 클래식 스크립트는 문서 파싱을 막고 즉시 실행되는 반면 ES 모듈은 항상
 // defer로 실행되므로, 이 모듈이 평가되는 시점에는 Chart 전역이 보장된다.
 
 import { formatPrice } from './format.js';
+import { buildGapHistogram } from './stats.js';
+import { normalizeTo100 } from './market.js';
 
 let priceChartInstance = null;
 let gapChartInstance = null;
+let gapHistChartInstance = null;
+let marketChartInstance = null;
 
 function getThemeColor(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -39,6 +43,8 @@ export function applyChartDefaults() {
 export function destroyCharts() {
     if (priceChartInstance) { priceChartInstance.destroy(); priceChartInstance = null; }
     if (gapChartInstance) { gapChartInstance.destroy(); gapChartInstance = null; }
+    if (gapHistChartInstance) { gapHistChartInstance.destroy(); gapHistChartInstance = null; }
+    if (marketChartInstance) { marketChartInstance.destroy(); marketChartInstance = null; }
 }
 
 // 차트 줌: 드래그 박스 줌(x축) + Ctrl+휠 줌 + Shift+드래그 팬.
@@ -259,6 +265,250 @@ export function renderGapChart(data, config) {
         },
     });
     bindZoomReset(ctx.canvas, () => gapChartInstance);
+}
+
+// 신규 차트 공용 툴팁 스타일 — 기존 가격/괴리율 차트와 동일한 톤.
+function tooltipStyle(theme) {
+    return {
+        backgroundColor: theme.surface2,
+        borderColor: theme.border,
+        borderWidth: 1,
+        titleColor: theme.text,
+        bodyColor: theme.text,
+        titleFont: { size: 12 },
+        bodyFont: { family: "'SFMono-Regular', Consolas, monospace", size: 12 },
+        padding: 12,
+        cornerRadius: 8,
+    };
+}
+
+// 숫자의 소수 자릿수(최대 3) — 히스토그램 라벨 포맷용. bin 폭은 nice 사다리 값이라 짧다.
+function decimalPlaces(value) {
+    const text = String(value);
+    const idx = text.indexOf('.');
+    return idx === -1 ? 0 : Math.min(text.length - idx - 1, 3);
+}
+
+// 괴리율 분포 히스토그램(막대). |bin 중심| >= threshold면 자산색 진하게, 아니면 60% 알파.
+// annotation 수직선으로 현재(마지막) 괴리율 위치를 표시한다.
+export function renderGapHistogram(data, config) {
+    const section = document.getElementById('gap-histogram-section');
+    const canvas = document.getElementById('gapHistChart');
+    if (!canvas) return;
+    if (gapHistChartInstance) { gapHistChartInstance.destroy(); gapHistChartInstance = null; }
+
+    const histogram = buildGapHistogram(data && data.gap_pct);
+    if (!histogram) {
+        if (section) section.hidden = true;
+        return;
+    }
+    if (section) section.hidden = false;
+
+    const theme = getChartTheme();
+    const { bins, binWidth } = histogram;
+    const edgeDigits = decimalPlaces(binWidth);
+    const centerDigits = decimalPlaces(binWidth / 2);
+    const labels = bins.map(b => ((b.x0 + b.x1) / 2).toFixed(centerDigits));
+    const colors = bins.map(b => {
+        const center = (b.x0 + b.x1) / 2;
+        // 임계 영역(|gap| >= threshold)은 진한 자산색, 평상 영역은 60% 알파로 연하게.
+        return Math.abs(center) >= config.threshold ? config.gapColor : config.gapColor + '99';
+    });
+
+    const annotations = {};
+    const gaps = (data.gap_pct || []).filter(v => typeof v === 'number' && Number.isFinite(v));
+    if (gaps.length) {
+        const current = gaps[gaps.length - 1];
+        // category 축에서 막대 i의 중심은 좌표 i — 값 current를 bin 좌표로 사상한다.
+        const xPos = (current - bins[0].x0) / binWidth - 0.5;
+        annotations.currentLine = {
+            type: 'line',
+            xMin: xPos,
+            xMax: xPos,
+            borderColor: theme.text,
+            borderWidth: 1.5,
+            borderDash: [4, 4],
+            label: {
+                display: true,
+                content: '현재 ' + (current >= 0 ? '+' : '') + current.toFixed(2) + '%',
+                position: 'start',
+                backgroundColor: theme.text,
+                color: theme.surface,
+                font: { size: 10, family: "'SFMono-Regular', Consolas, monospace" },
+                padding: { x: 6, y: 3 },
+            },
+        };
+    }
+
+    const ctx = canvas.getContext('2d');
+    gapHistChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: '일수',
+                data: bins.map(b => b.count),
+                backgroundColor: colors,
+                borderColor: config.gapColor,
+                borderWidth: 0,
+                categoryPercentage: 1,
+                barPercentage: 0.94,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2.35,
+            scales: {
+                x: {
+                    type: 'category',
+                    grid: { display: false },
+                    ticks: { maxTicksLimit: 13, maxRotation: 0, font: { size: 11 }, color: theme.textDim },
+                    title: { display: true, text: '괴리율 (%)', font: { size: 11 }, color: theme.textDim },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: theme.grid },
+                    ticks: { font: { size: 11 }, color: theme.textDim, precision: 0 },
+                    title: { display: true, text: '일수', font: { size: 11 }, color: theme.textDim },
+                },
+            },
+            plugins: {
+                legend: { display: false },
+                annotation: { annotations },
+                tooltip: {
+                    ...tooltipStyle(theme),
+                    callbacks: {
+                        title: items => {
+                            const bin = bins[items[0].dataIndex];
+                            return bin.x0.toFixed(edgeDigits) + '% ~ ' + bin.x1.toFixed(edgeDigits) + '%';
+                        },
+                        label: ctx2 => '빈도: ' + ctx2.parsed.y + '일',
+                    },
+                },
+            },
+        },
+    });
+}
+
+// 시장 지표 정규화 비교(선택 기간 시작점=100). ranged: {dates, [key]: values},
+// seriesDefs: [{key, label, color}] — 유효 시작점이 없는 시리즈는 제외.
+// 범례 클릭 토글은 Chart.js 기본 동작을 그대로 사용한다.
+export function renderMarketChart(ranged, seriesDefs) {
+    const canvas = document.getElementById('marketChart');
+    if (!canvas) return;
+    if (marketChartInstance) { marketChartInstance.destroy(); marketChartInstance = null; }
+    if (!ranged || !Array.isArray(ranged.dates)) return;
+
+    const theme = getChartTheme();
+    const datasets = [];
+    (seriesDefs || []).forEach(def => {
+        const normalized = normalizeTo100(ranged[def.key]);
+        if (!normalized) return;
+        datasets.push({
+            label: def.label,
+            data: normalized,
+            borderColor: def.color,
+            backgroundColor: def.color + '18',
+            borderWidth: 1.6,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            fill: false,
+            tension: 0.1,
+            spanGaps: true, // 휴장일 null은 선으로 연결
+        });
+    });
+    if (!datasets.length) return;
+
+    const ctx = canvas.getContext('2d');
+    marketChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels: ranged.dates, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2.35,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: {
+                    type: 'category',
+                    grid: { color: theme.grid },
+                    ticks: { maxTicksLimit: 10, maxRotation: 0, font: { size: 11 }, color: theme.textDim },
+                },
+                y: {
+                    grid: { color: theme.grid },
+                    ticks: { font: { size: 11 }, color: theme.textDim },
+                    title: { display: true, text: '시작점 = 100', font: { size: 11 }, color: theme.textDim },
+                },
+            },
+            plugins: {
+                ...zoomOptions(),
+                legend: {
+                    labels: { usePointStyle: true, pointStyle: 'circle', padding: 16, font: { size: 12 }, color: theme.textDim },
+                },
+                tooltip: {
+                    ...tooltipStyle(theme),
+                    callbacks: {
+                        label: ctx2 => ctx2.dataset.label + ': ' + ctx2.parsed.y.toFixed(1),
+                    },
+                },
+            },
+        },
+    });
+    bindZoomReset(ctx.canvas, () => marketChartInstance);
+}
+
+// 상관계수 매트릭스 테이블 — textContent로만 조립(데이터가 마크업으로 해석되지 않게).
+// 셀 배경: +1 → --up 계열 진하게, -1 → --down 계열, 0 근처 중립(혼합 비율 = |r|).
+export function renderCorrelationTable(corr) {
+    const table = document.getElementById('corrTable');
+    if (!table) return;
+    table.replaceChildren();
+    if (!corr || !Array.isArray(corr.labels) || corr.labels.length === 0) {
+        table.style.display = 'none';
+        return;
+    }
+    table.style.display = '';
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    headRow.appendChild(document.createElement('th')); // 좌상단 코너
+    corr.labels.forEach(label => {
+        const th = document.createElement('th');
+        th.setAttribute('scope', 'col');
+        th.textContent = label;
+        headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    corr.labels.forEach((rowLabel, i) => {
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.setAttribute('scope', 'row');
+        th.textContent = rowLabel;
+        tr.appendChild(th);
+        corr.labels.forEach((colLabel, j) => {
+            const td = document.createElement('td');
+            td.className = 'corr-cell';
+            const r = corr.matrix[i][j];
+            const count = corr.n[i][j];
+            if (r == null) {
+                td.textContent = '-'; // 표본 부족(n < 20) 또는 분산 0
+            } else {
+                td.textContent = r.toFixed(2);
+                // 혼합 최대 60%라 양 테마 모두에서 --text 글자 대비가 유지된다.
+                const ratio = Math.round(Math.abs(r) * 60); // |r|=1 → 60% 혼합
+                const base = r >= 0 ? 'var(--up)' : 'var(--down)';
+                td.style.backgroundColor = `color-mix(in srgb, ${base} ${ratio}%, var(--surface))`;
+            }
+            td.title = rowLabel + ' × ' + colLabel + ' · n=' + count;
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
 }
 
 export function renderTable(periods, config) {
