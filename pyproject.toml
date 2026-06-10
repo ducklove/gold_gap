@@ -11,3 +11,6 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# bare `pytest` 실행(CI)에서도 리포 루트의 goldgap 패키지를 찾도록 보장
+# (`python -m pytest`는 CWD를 sys.path에 넣지만 bare pytest는 아님)
+pythonpath = ["."]
