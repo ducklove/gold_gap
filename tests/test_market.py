@@ -315,3 +315,38 @@ def test_fetch_fresh_market_alone_does_not_satisfy_assets(monkeypatch):
 
     with pytest.raises(RuntimeError, match="All assets failed"):
         fetch_fresh(None)
+
+
+def test_fetch_fresh_new_asset_gets_full_fx_history(monkeypatch):
+    """증분 런에서 신규 자산(기존 데이터 없음)은 전체 환율로 fetch한다.
+
+    ETH 최초 수집 때 증분 fx_df가 ffill/bfill로 과거 5년 환율을 최근 값
+    상수로 백필해 괴리율 역사가 오염된 사고의 회귀 방지. 전체 환율은
+    전체 fetch가 필요한 블록들(신규 자산·market)이 캐시로 공유해 1회만 받는다.
+    """
+    # eth와 market이 없는 기존 데이터 → 둘 다 전체 fetch 대상
+    existing = {key: make_asset(["2026-06-01"]) for key in ["gold", "bitcoin", "usdt"]}
+    fx_calls = []
+    received = {"assets": []}
+
+    def recording_fetcher(fx_df, start_date=None):
+        received["assets"].append((fx_df, start_date))
+        return make_asset(["2026-06-02"])
+
+    def fake_market(fx_df, start_date=None):
+        received["market"] = (fx_df, start_date)
+        return make_market(["2026-06-02"])
+
+    _patch_fetch_fresh_deps(monkeypatch, recording_fetcher, fake_market, fx_calls)
+    data = fetch_fresh(existing)
+
+    calls = received["assets"]  # gold, bitcoin, eth, usdt 순
+    incremental_fx = calls[0][0]
+    assert incremental_fx.startswith("FX:") and incremental_fx != "FX:None"
+    assert calls[0][1] is not None  # gold 증분
+    assert calls[2] == ("FX:None", None)  # eth: 전체 환율 + 전체 fetch
+    assert calls[3][0] == incremental_fx  # usdt: 증분 환율 그대로
+    assert received["market"] == ("FX:None", None)  # market도 전체 환율 공유
+    # 환율 fetch는 [증분 1회, 전체 1회] — 전체는 eth·market이 캐시 공유
+    assert len(fx_calls) == 2 and fx_calls[0] is not None and fx_calls[1] is None
+    assert "eth" in data and "market" in data

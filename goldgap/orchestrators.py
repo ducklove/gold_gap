@@ -204,6 +204,20 @@ def fetch_fresh(existing_data=None):
 
     fx_df = fetch_exchange_rate(fx_start)
 
+    # 증분 런에서 전체 fetch가 필요한 블록(신규 자산·market 부재)용 전체 환율 캐시.
+    # 증분 fx_df로 5년 시계열을 만들면 ffill/bfill이 과거 환율을 최근 값 상수로
+    # 백필한다 — ETH 최초 수집에서 실제로 발생한 데이터 오염 사고의 재발 방지.
+    full_fx_cache = {"df": fx_df if fx_start is None else None}
+
+    def fx_covering(start):
+        """start(None=전체 fetch)를 커버하는 환율 DataFrame을 반환한다."""
+        if start is not None or fx_start is None:
+            return fx_df
+        if full_fx_cache["df"] is None:
+            logger.info("Full FX history fetch for full-range block...")
+            full_fx_cache["df"] = fetch_exchange_rate(None)
+        return full_fx_cache["df"]
+
     data = {}
     errors = []
 
@@ -216,7 +230,7 @@ def fetch_fresh(existing_data=None):
     for name, fetcher in fetchers:
         try:
             start = start_dates.get(name)
-            new_data = fetcher(fx_df, start)
+            new_data = fetcher(fx_covering(start), start)
 
             if start and existing_data and existing_data.get(name):
                 data[name] = merge_asset_data(existing_data[name], new_data, get_threshold(name))
@@ -237,12 +251,8 @@ def fetch_fresh(existing_data=None):
     # market 블록 — 자산 루프와 동일한 격리 패턴 (실패 시 기존 유지)
     market_start = start_dates.get("market")
     try:
-        market_fx = fx_df
-        if market_start is None and fx_start is not None:
-            # 기존에 market이 없으면 5년 전체 fetch — 증분 fx_df로는 환율
-            # 히스토리가 부족해 usd_krw가 null로 남으므로 전체 환율을 따로 받는다.
-            market_fx = fetch_exchange_rate(None)
-        new_market = get_market_data(market_fx, market_start)
+        # market 부재 시 5년 전체 fetch — fx_covering이 전체 환율을 보장(자산과 캐시 공유)
+        new_market = get_market_data(fx_covering(market_start), market_start)
 
         if market_start and existing_data and existing_data.get("market"):
             data["market"] = merge_market_data(existing_data["market"], new_market)
