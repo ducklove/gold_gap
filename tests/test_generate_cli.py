@@ -1,9 +1,13 @@
-"""generate_data.py CLI 통합 테스트 (네트워크 차단 환경의 전체 실패 폴백 경로).
+"""generate_data.py CLI 통합 테스트 (전체 실패 폴백 경로).
 
 tmp 디렉터리에 data.json과 스크립트를 복사해 실행한다 — 스크립트는
 자신의 디렉터리 기준으로 data.json을 읽고 쓰므로 리포의 골든 data.json은
-건드리지 않는다. 외부 API가 차단된 환경에서는 fetch가 전부 실패하고
-기존 data.json 폴백 + meta/updated_at 부착 후 exit 0이어야 한다.
+건드리지 않는다. fetch가 전부 실패하면 기존 data.json 폴백 +
+meta/updated_at 부착 후 exit 0이어야 한다.
+
+fetch 실패는 도달 불가 프록시 주입으로 강제한다 — CI(GitHub Actions)처럼
+실제 네트워크가 있는 환경에서는 수집이 진짜로 성공해버려 폴백 경로가
+실행되지 않으므로, 환경과 무관하게 결정적으로 만들기 위함이다.
 """
 
 import json
@@ -17,12 +21,26 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_JSON_PATH = os.path.join(REPO_ROOT, "data.json")
 
 
+def _offline_env():
+    """모든 외부 HTTP 호출을 즉시 실패시키는 서브프로세스 env.
+
+    127.0.0.1:9(discard 포트)를 프록시로 강제 — requests는 대소문자 env를,
+    libcurl 계열은 소문자 env를 읽으므로 둘 다 설정한다.
+    """
+    env = dict(os.environ)
+    env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        env[key] = "http://127.0.0.1:9"
+    for key in ("NO_PROXY", "no_proxy"):
+        env[key] = ""
+    return env
+
+
 def test_cli_fallback_keeps_existing_data_and_attaches_meta(tmp_path, golden_data):
     shutil.copy(DATA_JSON_PATH, tmp_path / "data.json")
     shutil.copy(os.path.join(REPO_ROOT, "generate_data.py"), tmp_path / "generate_data.py")
 
-    env = dict(os.environ)
-    env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+    env = _offline_env()
 
     result = subprocess.run(
         [sys.executable, "generate_data.py"],
@@ -57,8 +75,7 @@ def test_cli_exits_nonzero_without_any_data(tmp_path):
     """기존 data.json도 없고 fetch도 전부 실패하면 exit 1 (cron 실패 신호)."""
     shutil.copy(os.path.join(REPO_ROOT, "generate_data.py"), tmp_path / "generate_data.py")
 
-    env = dict(os.environ)
-    env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+    env = _offline_env()
 
     result = subprocess.run(
         [sys.executable, "generate_data.py"],
