@@ -29,21 +29,40 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # data.json은 master가 아닌 data 전용 브랜치에 산다 (코드 히스토리 오염 방지).
+      # 증분 갱신의 기준이자 임계 돌파 비교의 직전 스냅샷.
+      - name: Fetch current data.json (data 브랜치)
+        run: |
+          git fetch --depth=1 origin data
+          git show FETCH_HEAD:data.json > data.json
+          cp data.json /tmp/data_prev.json
+
       - name: Generate data.json
         run: python generate_data.py
 
-      - name: Commit and push
+      - name: Detect threshold crossings
+        id: alerts
+        run: |
+          python -m goldgap.alerts /tmp/data_prev.json data.json | tee /tmp/crossings.txt
+          if [ -s /tmp/crossings.txt ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push (data 브랜치)
         id: commit
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.json
-          if git diff --cached --quiet; then
+          if cmp -s data.json /tmp/data_prev.json; then
             echo "No changes"
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git worktree add --detach /tmp/data-wt FETCH_HEAD
+            cp data.json /tmp/data-wt/data.json
+            cd /tmp/data-wt
+            git add data.json
             git commit -m "Update data.json $(date -u +'%Y-%m-%d %H:%M') UTC"
-            git push
+            git push origin HEAD:refs/heads/data
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -52,6 +71,28 @@ jobs:
         run: gh workflow run deploy.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 임계치 신규 진입 시 이슈 알림 (열린 알림 이슈가 있으면 코멘트로 합침)
+      - name: Threshold crossing alert
+        if: steps.alerts.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create kimchi-alert --color F5A623 \
+            --description "괴리율 임계 돌파 알림" --force || true
+          {
+            cat /tmp/crossings.txt
+            echo ""
+            echo "대시보드: https://ducklove.github.io/gold_gap/"
+          } > /tmp/alert_body.txt
+          existing=$(gh issue list --label kimchi-alert --state open \
+            --json number --jq '.[0].number' || true)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file /tmp/alert_body.txt
+          else
+            gh issue create --title "괴리율 임계 돌파 알림" \
+              --label kimchi-alert --body-file /tmp/alert_body.txt
+          fi
 
       # 실패가 조용히 누적되지 않도록 이슈로 알림 (열린 이슈가 있으면 코멘트로 합침)
       - name: Report failure as issue

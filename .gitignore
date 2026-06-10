@@ -6,3 +6,4 @@ cache/
 .ruff_cache/
 *.egg-info/
 .claude/worktrees/
+data.json
