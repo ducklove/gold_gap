@@ -159,6 +159,19 @@
                 </div>
             </div>
 
+            <!-- 가격 변동 분해 — 로그수익률 항등식 R_dom = R_usd + R_fx + R_gap(김프 요인은 잔차).
+                 행/막대는 main.js(updateDecomposition)가 생성하고, 선택 기간 내 유효 관측 쌍이
+                 2개 미만이면 섹션을 숨긴 채 둔다. 막대는 차트 라이브러리 없는 순수 CSS. -->
+            <section class="chart-container decomp-section" id="decomp-section" hidden>
+                <div class="section-header">
+                    <h2>가격 변동 분해</h2>
+                </div>
+                <p class="decomp-headline" id="decomp-headline"></p>
+                <p class="decomp-dates" id="decomp-dates"></p>
+                <div class="decomp-rows" id="decomp-rows"></div>
+                <p class="decomp-caption">로그수익률 분해 — 세 요인의 합 = 국내 가격 변화 (김프 요인은 잔차)</p>
+            </section>
+
             <section class="chart-container">
                 <div class="section-header">
                     <h2 id="price-chart-title">가격 비교</h2>

@@ -15,7 +15,8 @@
 //  ③ 비GET 요청과 그 외 출처(실시간 시세 API 등)는 가로채지 않는다 — 시세는
 //     캐시되면 안 되고, POST 등은 캐시 의미가 없다.
 
-const CACHE = 'goldgap-v1';
+// v2: 가격 변동 분해 모듈(decompose.js) 추가 및 앱 셸 갱신.
+const CACHE = 'goldgap-v2';
 
 // 앱 셸 프리캐시 목록 — './'는 SW 위치 기준 사이트 루트 문서.
 const APP_SHELL = [
@@ -29,6 +30,7 @@ const APP_SHELL = [
     'static/js/format.js',
     'static/js/live-quotes.js',
     'static/js/market.js',
+    'static/js/decompose.js',
     'static/icon.svg',
     'manifest.webmanifest',
 ];

@@ -676,3 +676,112 @@ td.highlight {
     font-size: 12px;
     margin-top: 10px;
 }
+
+/* ===== 신규 UI: 가격 변동 분해 패널 (순수 CSS 막대 — 기존 변수 체계 재사용) ===== */
+
+.decomp-section[hidden] {
+    display: none;
+}
+
+.decomp-headline {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    font-variant-numeric: tabular-nums;
+}
+
+.decomp-dates {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+}
+
+.decomp-rows {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.decomp-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 160px) 84px 1fr;
+    align-items: center;
+    gap: 12px;
+}
+
+.decomp-row-label {
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.decomp-row-value {
+    font-size: 13px;
+    font-weight: 700;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.decomp-row-value.up {
+    color: var(--up);
+}
+
+.decomp-row-value.down {
+    color: var(--down);
+}
+
+/* 중앙 0축 기준 좌우로 뻗는 막대 — 양수는 오른쪽(--up), 음수는 왼쪽(--down). */
+.decomp-bar {
+    position: relative;
+    height: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.decomp-bar::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+}
+
+.decomp-bar-fill {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    border-radius: 4px;
+    min-width: 1px;
+}
+
+.decomp-bar-fill.up {
+    left: 50%;
+    background: var(--up);
+}
+
+.decomp-bar-fill.down {
+    right: 50%;
+    background: var(--down);
+}
+
+.decomp-caption {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 14px;
+}
+
+@media (max-width: 560px) {
+    .decomp-row {
+        grid-template-columns: 1fr 84px;
+    }
+
+    .decomp-bar {
+        grid-column: 1 / -1;
+    }
+}

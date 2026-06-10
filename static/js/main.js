@@ -17,6 +17,7 @@ import {
 import { fetchJson, applyClientLiveQuotes } from './live-quotes.js';
 import { gapHistoricalStats, formatHistoricalStats } from './stats.js';
 import { alignSeries, buildCorrelationMatrix, collectMarketSeries, latestWithChange } from './market.js';
+import { decomposePriceChange } from './decompose.js';
 
 const THEME_STORAGE_KEY = 'theme';
 
@@ -337,6 +338,7 @@ function switchTab(asset) {
     });
 
     updateCards(rangedData, config, activeData, data);
+    updateDecomposition(activeData);
 
     setText('price-chart-title', config.label + ' 가격 비교 (' + chartConfig.unit + ')');
     setText('table-title', chartConfig.threshold + '% 이상 괴리율 발생 구간');
@@ -352,6 +354,68 @@ function switchTab(asset) {
     // 시장 섹션은 자산 탭과 무관하게 currentRange만 따르지만, 구현 단순화를 위해
     // 모든 재렌더 경로(탭/기간/테마/데이터 갱신)가 모이는 이곳에서 함께 갱신한다.
     updateMarketSection();
+}
+
+// ----- 가격 변동 분해 패널 -----
+
+// 부호 있는 % 문자열(+1.23 / -1.23). suffix는 '%' 또는 '%p'.
+function formatSignedPct(value, suffix) {
+    return (value >= 0 ? '+' : '') + value.toFixed(2) + suffix;
+}
+
+// 요인 1행: 라벨 · 부호 있는 값(%p) · 중앙 0축 기준 좌우로 뻗는 순수 CSS 가로 막대.
+// widthPct는 컨테이너 전체 대비 %(중앙에서 한쪽 최대 50%).
+function buildDecompRow(label, value, maxAbs) {
+    const positive = value >= 0;
+    const row = document.createElement('div');
+    row.className = 'decomp-row';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'decomp-row-label';
+    labelEl.textContent = label;
+    row.appendChild(labelEl);
+
+    const valueEl = document.createElement('div');
+    valueEl.className = 'decomp-row-value ' + (value > 0 ? 'up' : value < 0 ? 'down' : '');
+    valueEl.textContent = formatSignedPct(value, '%p');
+    row.appendChild(valueEl);
+
+    const bar = document.createElement('div');
+    bar.className = 'decomp-bar';
+    const fill = document.createElement('span');
+    fill.className = 'decomp-bar-fill ' + (positive ? 'up' : 'down');
+    const widthPct = maxAbs > 0 ? (Math.abs(value) / maxAbs) * 50 : 0;
+    fill.style.width = widthPct.toFixed(2) + '%';
+    bar.appendChild(fill);
+    row.appendChild(bar);
+
+    return row;
+}
+
+// 선택 기간의 국내 가격 변화(로그수익률)를 국제 가격/환율/김프 세 요인으로 분해해
+// 표시한다. activeData = 현재 모드 데이터(금은 선택된 국제 기준), 기간은 currentRange.
+// 유효 관측 쌍이 2개 미만이면 패널을 숨긴다.
+function updateDecomposition(activeData) {
+    const section = document.getElementById('decomp-section');
+    if (!section) return;
+    const startIdx = rangeStartIndex(activeData.dates, currentRange);
+    const result = decomposePriceChange(activeData, startIdx);
+    section.hidden = !result;
+    if (!result) return;
+
+    setText('decomp-headline', '선택 기간 국내 가격 ' + formatSignedPct(result.dom, '%'));
+    setText('decomp-dates', result.startDate + ' → ' + result.endDate);
+
+    const rows = [
+        { label: '국제 가격', value: result.usd },
+        { label: '환율 (USD/KRW)', value: result.fx },
+        { label: '김치프리미엄', value: result.gap },
+    ];
+    const maxAbs = Math.max(...rows.map(row => Math.abs(row.value)));
+    const wrap = document.getElementById('decomp-rows');
+    if (!wrap) return;
+    wrap.replaceChildren();
+    rows.forEach(row => wrap.appendChild(buildDecompRow(row.label, row.value, maxAbs)));
 }
 
 // ----- 시장 지표 · 상관관계 섹션 -----
