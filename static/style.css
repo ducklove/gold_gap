@@ -557,3 +557,35 @@ td.highlight {
         flex: 0 0 auto;
     }
 }
+
+/* ===== 신규 UI: 조회 기간 토글 · 실시간 근사 배지 (기존 변수 체계 재사용) ===== */
+
+.range-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+}
+
+.range-toolbar .mode-toggle {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.live-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 8px;
+    border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+    color: var(--warn);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.6;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.live-badge[hidden] {
+    display: none;
+}
