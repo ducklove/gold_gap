@@ -8,7 +8,11 @@
 |---|---|---|---|
 | Gold | KRX 금현물 (ACE KRX금현물 ETF 411060 → 원/g 환산) | COMEX 선물 GC=F 또는 WGC/ICE 런던 현물 (토글) | ±5% |
 | Bitcoin | 업비트 KRW-BTC | BTC-USD × USD/KRW | ±5% |
+| Ethereum | 업비트 KRW-ETH | ETH-USD × USD/KRW | ±5% |
 | USDT | 빗썸 KRW-USDT (실패 시 업비트 백업) | USDT-USD × USD/KRW | ±3% |
+
+자산 추가는 `goldgap/assets.py` 레지스트리 등록 + 오케스트레이터 함수 하나로 끝난다 —
+프론트엔드 탭·라벨·임계치는 data.json의 meta 블록에서 동적으로 구성된다.
 
 ## 아키텍처
 
@@ -24,8 +28,9 @@ goldgap/ 패키지 ──▶ generate_data.py ──▶ data.json
                                     GitHub Pages (templates/ + static/ + data.json)
 ```
 
-- **데이터 갱신**: `update-data.yml`이 30분마다 `generate_data.py`를 실행해 기존 data.json의 마지막 날짜 −7일부터 증분 수집·병합 후 커밋하고, 변경이 있으면 Pages 배포를 트리거합니다.
+- **데이터 갱신**: `update-data.yml`이 30분마다 `generate_data.py`를 실행해 기존 data.json의 마지막 날짜 −7일부터 증분 수집·병합 후 **`data` 전용 브랜치**에 커밋하고, 변경이 있으면 Pages 배포를 트리거합니다. master 히스토리는 사람의 코드 변경만 담습니다.
 - **장애 격리**: 자산 단위 수집 실패 → 해당 자산만 기존 데이터 유지. 전체 실패 → 기존 data.json 폴백(사이트는 계속 동작). 워크플로우 실패 시 `data-update-failure` 라벨로 이슈가 자동 생성됩니다.
+- **임계 돌파 알림**: 갱신 시 직전 데이터 대비 괴리율이 임계치에 **신규 진입**한 자산이 있으면 `kimchi-alert` 라벨 이슈로 알립니다 (이미 임계 이상이던 자산은 재알림하지 않음).
 - **브라우저 새로고침**: 정적 호스팅에서는 백엔드가 없으므로, 새로고침 버튼은 거래소·환율 API를 브라우저에서 직접 호출해 오늘 포인트를 합성합니다(아래 [데이터 주의사항](#데이터-주의사항) 참고).
 
 ## 디렉터리 구조
@@ -51,13 +56,16 @@ docs/project-review.html  # 구조·품질 리뷰 및 로드맵 문서
 ```bash
 pip install -r requirements-dev.txt
 
-# 1) 대시보드 미리보기 (리포의 data.json 사용)
+# 0) data.json 받아오기 — data 전용 브랜치에 산다 (미리보기·골든 테스트에 필요)
+git fetch --depth=1 origin data && git show FETCH_HEAD:data.json > data.json
+
+# 1) 대시보드 미리보기
 python app.py            # http://localhost:5000
 
 # 2) 데이터 직접 생성/갱신 (외부 API 접근 필요)
 python generate_data.py  # data.json 증분 갱신
 
-# 3) 테스트·린트
+# 3) 테스트·린트 (data.json 없으면 골든 회귀 테스트는 안내와 함께 skip)
 pytest -q
 ruff check .
 ```
@@ -135,13 +143,16 @@ ruff check .
 
 | 워크플로우 | 트리거 | 역할 |
 |---|---|---|
-| `update-data.yml` | 30분 cron / 수동 | data.json 증분 갱신·커밋, 변경 시 배포 트리거, 실패 시 이슈 알림 |
-| `deploy.yml` | master push / 수동 | 정적 산출물 조립 → GitHub Pages 배포 |
-| `ci.yml` | push·PR (data.json 변경 제외) | ruff 린트 + pytest |
+| `update-data.yml` | 30분 cron / 수동 | data.json 증분 갱신 → `data` 브랜치 커밋, 변경 시 배포 트리거, 임계 돌파·실패 이슈 알림 |
+| `deploy.yml` | master push / 수동 | `data` 브랜치의 data.json + master의 정적 산출물 조립 → GitHub Pages 배포 |
+| `ci.yml` | push·PR (`data` 브랜치 제외) | `data` 브랜치에서 골든 data.json fetch 후 ruff + pytest |
+
+데이터는 `data` orphan 브랜치에만 커밋된다 — master를 클론해도 data.json이 없으며,
+위 로컬 개발 0번 명령으로 받아온다.
 
 ## 로드맵
 
-구조·품질 평가와 단계별 개선 계획은 [docs/project-review.html](docs/project-review.html) 참고. 남은 주요 항목: 데이터 커밋의 orphan 브랜치 분리, 임계 돌파 웹훅 알림, 자산 확장(ETH·은), 괴리율 통계 고도화.
+구조·품질 평가와 단계별 개선 계획은 [docs/project-review.html](docs/project-review.html) 참고. 남은 주요 항목: 괴리율 통계 고도화(분포·z-score), 환율 기여도 분해 카드, OG 공유 이미지, 차트 줌, 알림 웹훅(텔레그램/디스코드) 연동.
 
 ## 라이선스
 

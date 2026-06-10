@@ -76,6 +76,22 @@ def get_bitcoin_data(fx_df, start_date=None):
     return data
 
 
+def get_eth_data(fx_df, start_date=None):
+    """이더리움 자산 오케스트레이터"""
+    logger.info("=== Fetching ETH data ===")
+    intl_df = fetch_international_crypto("ETH-USD", fx_df, start_date)
+    domestic_df = fetch_upbit_ohlcv("KRW-ETH", start_date, include_latest=True)
+    merged = calculate_gap(intl_df, domestic_df)
+    periods = _periods_from_merged(merged, get_threshold("eth"))
+    data = serialize_asset_data(merged, periods, extra_columns=["crypto_usd"])
+    data["sources"] = {
+        "domestic": "Upbit KRW-ETH daily candles plus current ticker",
+        "international": "ETH-USD latest/daily close from Yahoo Finance, converted to KRW",
+        "fx": "USD/KRW KRW=X latest/daily close from Yahoo Finance",
+    }
+    return data
+
+
 def fetch_usdt_domestic(start_date=None):
     """USDT 국내 가격 조회: 빗썸 우선, 실패 시 업비트 백업"""
     sources = [
@@ -153,7 +169,12 @@ def fetch_fresh(existing_data=None):
     data = {}
     errors = []
 
-    fetchers = [("gold", get_gold_data), ("bitcoin", get_bitcoin_data), ("usdt", get_usdt_data)]
+    fetchers = [
+        ("gold", get_gold_data),
+        ("bitcoin", get_bitcoin_data),
+        ("eth", get_eth_data),
+        ("usdt", get_usdt_data),
+    ]
     for name, fetcher in fetchers:
         try:
             start = start_dates.get(name)
@@ -194,6 +215,7 @@ def get_all_data(force_refresh=False):
     data = {}
     data["gold"] = get_gold_data(fx_df)
     data["bitcoin"] = get_bitcoin_data(fx_df)
+    data["eth"] = get_eth_data(fx_df)
     data["usdt"] = get_usdt_data(fx_df)
     # 정적 data.json과 같은 계약: KST 갱신 시각(BUG-01) + meta 블록
     data["updated_at"] = format_updated_at()

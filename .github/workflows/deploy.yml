@@ -20,6 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # data.json은 master가 아닌 data 전용 브랜치에 산다
+      - name: Fetch data.json (data 브랜치)
+        run: |
+          git fetch --depth=1 origin data
+          git show FETCH_HEAD:data.json > data.json
+
       - name: Assemble static site
         run: |
           mkdir -p _site

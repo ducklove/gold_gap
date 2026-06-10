@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    # data 브랜치는 데이터 파일만 담는 전용 브랜치 — 코드 CI 대상 아님
+    branches: ['**', '!data']
     paths-ignore:
       - 'data.json'
       - 'docs/**'
@@ -31,6 +32,12 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
+
+      # 골든 회귀 테스트(병합·구간 재계산)가 실제 데이터를 입력으로 사용
+      - name: Fetch golden data.json (data 브랜치)
+        run: |
+          git fetch --depth=1 origin data
+          git show FETCH_HEAD:data.json > data.json
 
       - name: Lint (ruff)
         run: ruff check .

@@ -66,7 +66,7 @@ def test_build_meta_schema_exact():
     assert generated.utcoffset() == timedelta(hours=9)
     assert "+09:00" in meta["generated_at"]
 
-    assert set(meta["assets"]) == {"gold", "bitcoin", "usdt"}
+    assert set(meta["assets"]) == set(ASSETS) == {"gold", "bitcoin", "eth", "usdt"}
 
     base_keys = {
         "label", "order", "threshold_pct", "unit", "color",
@@ -95,14 +95,17 @@ def test_build_meta_values_match_registry():
     assets = build_meta()["assets"]
     assert assets["gold"]["order"] == 1
     assert assets["bitcoin"]["order"] == 2
-    assert assets["usdt"]["order"] == 3
+    assert assets["eth"]["order"] == 3
+    assert assets["usdt"]["order"] == 4
     assert assets["gold"]["threshold_pct"] == 5.0
     assert assets["bitcoin"]["threshold_pct"] == 5.0
+    assert assets["eth"]["threshold_pct"] == 5.0
     assert assets["usdt"]["threshold_pct"] == 3.0
     assert assets["gold"]["unit"] == "KRW/g"
-    assert assets["bitcoin"]["unit"] == assets["usdt"]["unit"] == "KRW"
+    assert assets["bitcoin"]["unit"] == assets["eth"]["unit"] == assets["usdt"]["unit"] == "KRW"
     assert assets["gold"]["color"] == "#d9a441"
     assert assets["bitcoin"]["color"] == "#d9791f"
+    assert assets["eth"]["color"] == "#627eea"
     assert assets["usdt"]["color"] == "#1f9b57"
 
 
