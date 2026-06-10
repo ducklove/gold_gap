@@ -71,11 +71,18 @@ pytest -q
 ruff check .
 ```
 
-`app.py`는 개발 편의용입니다. `/data.json`·`/config.json`은 리포 루트 파일을 그대로 서빙하고, `/api/data`는 24시간 파일 캐시를 사용한 실시간 수집 경로입니다.
+`app.py`는 개발 편의용입니다. `/data.json`·`/config.json`·`/sw.js`·`/manifest.webmanifest`는 리포 루트 파일을 그대로 서빙하고, `/api/data`는 24시간 파일 캐시를 사용한 실시간 수집 경로입니다.
+
+### PWA
+
+배포 사이트는 홈 화면 설치형 PWA입니다 — `manifest.webmanifest` + `sw.js`(서비스 워커).
+캐시 전략: `data.json`·`og.png`는 network-first(오프라인 시 마지막 캐시 폴백),
+정적 자산·CDN은 stale-while-revalidate. 서비스 워커를 수정하면 `sw.js`의
+`CACHE` 버전 문자열을 올려 구캐시를 무효화하세요.
 
 ## data.json 스키마
 
-최상위: `meta`, `updated_at`(`"YYYY-MM-DD HH:MM KST"`), 자산 키(`gold`·`bitcoin`·`usdt`).
+최상위: `meta`, `updated_at`(`"YYYY-MM-DD HH:MM KST"`), 자산 키(`gold`·`bitcoin`·`eth`·`usdt`), `market`(시장 지표).
 
 각 자산 객체(레거시 호환 — 구버전 프론트가 그대로 읽을 수 있도록 유지):
 
@@ -108,6 +115,25 @@ ruff check .
   }
 }
 ```
+
+### market 블록 (시장 지표)
+
+KOSPI(^KS11)·S&P500(^GSPC)·USD/KRW의 일별 종가 시계열입니다. 두 시장의 휴장일이
+서로 달라 **날짜 합집합 + 결측 `null`** 방식을 씁니다 (자산 페이로드의 "필수 필드
+없는 행 제외" 방식과 다름). 프론트엔드는 이 블록으로 시장 지표 카드·정규화 비교
+차트·상관계수 매트릭스를 그리며, **블록이 없으면 해당 섹션만 숨깁니다**(하위호환).
+
+```jsonc
+"market": {
+  "dates": ["YYYY-MM-DD", ...],   // 합집합, 오름차순
+  "kospi":   [3120.5, null, ...], // 휴장일은 null
+  "sp500":   [...], "usd_krw": [...],
+  "sources": { ... }
+}
+```
+
+상관계수는 프론트엔드에서 일별 로그수익률의 피어슨 상관으로 계산합니다
+(쌍별 완전 관측, 표본 20 미만은 표시 안 함). 대상: 금(XAU)·BTC·ETH·달러(USD/KRW)·KOSPI·S&P500.
 
 ### 고괴리 구간 규칙 (백엔드·프론트 공통)
 
@@ -165,7 +191,7 @@ ruff check .
 
 ## 로드맵
 
-구조·품질 평가와 단계별 개선 계획은 [docs/project-review.html](docs/project-review.html) 참고. 남은 주요 항목: 환율 기여도 분해 카드(분해 산식 정의 필요 — 환율 고정 가정 등 정의에 따라 결과가 크게 달라져 보류), 괴리율 분포 히스토그램, i18n(영어), PWA.
+구조·품질 평가와 단계별 개선 계획은 [docs/project-review.html](docs/project-review.html) 참고. 남은 주요 항목: 환율 기여도 분해 카드(분해 산식 정의 필요 — 환율 고정 가정 등 정의에 따라 결과가 크게 달라져 보류), i18n(영어).
 
 ## 라이선스
 
