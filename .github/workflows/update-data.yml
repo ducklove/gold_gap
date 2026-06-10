@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
   actions: write
+  issues: write
+
+# cron과 수동 실행이 겹칠 때 push 충돌 방지 (진행 중 실행은 끝까지 보장)
+concurrency:
+  group: update-data
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -18,6 +24,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -45,3 +52,22 @@ jobs:
         run: gh workflow run deploy.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 실패가 조용히 누적되지 않도록 이슈로 알림 (열린 이슈가 있으면 코멘트로 합침)
+      - name: Report failure as issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create data-update-failure --color D93F0B \
+            --description "데이터 갱신 워크플로우 실패" --force || true
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body="update-data 워크플로우가 실패했습니다. 실행 로그: ${run_url}"
+          existing=$(gh issue list --label data-update-failure --state open \
+            --json number --jq '.[0].number' || true)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "데이터 갱신 실패: update-data 워크플로우" \
+              --label data-update-failure --body "$body"
+          fi
