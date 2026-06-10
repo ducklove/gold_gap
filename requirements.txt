@@ -1,5 +1,6 @@
-flask
-yfinance
-pandas
-requests
-numpy
+# 운영 검증된 버전으로 고정 (CI가 30분마다 새로 설치하므로 미고정 시 상류 릴리스가 곧바로 장애로 이어짐)
+# 갱신 절차: 로컬에서 상위 버전 설치 → pytest 통과 확인 → 핀 수정
+flask==3.1.3
+yfinance==1.4.1
+pandas==3.0.3
+requests==2.33.1

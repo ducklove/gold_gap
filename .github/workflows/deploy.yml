@@ -22,10 +22,9 @@ jobs:
 
       - name: Assemble static site
         run: |
-          mkdir -p _site/static
+          mkdir -p _site
           cp templates/index.html _site/index.html
-          cp static/style.css _site/static/style.css
-          cp static/icon.svg _site/static/icon.svg
+          cp -r static _site/static
           cp config.json _site/config.json
           cp data.json _site/data.json
 
