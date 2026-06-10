@@ -153,13 +153,15 @@ def _tail_slice(payload, n=7):
     return sliced
 
 
-@pytest.mark.parametrize("asset_key", ["gold", "bitcoin", "usdt"])
+@pytest.mark.parametrize("asset_key", ["gold", "bitcoin", "eth", "usdt"])
 def test_golden_merge_idempotent(golden_data, asset_key):
     """핵심 회귀: 실제 data.json 골든 기준 merge(old, old 마지막 7일) == old.
 
     dates/모든 시리즈가 무손상이어야 하고, high_gap_periods는 통일 규칙
     재계산값(저장값과 동일함이 test_periods_regression에서 보증)이어야 한다.
     """
+    if asset_key not in golden_data:
+        pytest.skip(f"{asset_key} 없음 — data 브랜치 재수집 윈도우")
     old = golden_data[asset_key]
     new = _tail_slice(old, 7)
     merged = merge_asset_data(copy.deepcopy(old), new, get_threshold(asset_key))

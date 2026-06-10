@@ -17,6 +17,8 @@ import shutil
 import subprocess
 import sys
 
+from goldgap.assets import ASSETS
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_JSON_PATH = os.path.join(REPO_ROOT, "data.json")
 
@@ -58,7 +60,8 @@ def test_cli_fallback_keeps_existing_data_and_attaches_meta(tmp_path, golden_dat
         written = json.load(f)
 
     # 기존 자산 데이터 보존 (전체 실패 폴백 경로)
-    for asset_key in ["gold", "bitcoin", "usdt"]:
+    # 골든에 실재하는 자산만 검사 — data 브랜치 재수집 윈도우(일시 제거)에 강건
+    for asset_key in [k for k in ASSETS if k in golden_data]:
         assert written[asset_key] == golden_data[asset_key], f"{asset_key} payload changed"
 
     # updated_at: KST 형식으로 새로 기록
@@ -102,7 +105,7 @@ def test_cli_fallback_preserves_market_block(tmp_path, golden_data):
         written = json.load(f)
 
     assert written["market"] == fake_market, "market block lost in fallback"
-    for asset_key in ["gold", "bitcoin", "eth", "usdt"]:
+    for asset_key in [k for k in ASSETS if k in golden_data]:
         assert written[asset_key] == golden_data[asset_key], f"{asset_key} payload changed"
 
 
