@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from data_fetcher import (
     THRESHOLDS,
@@ -224,7 +225,8 @@ def main():
             print("ERROR: No data available", file=sys.stderr)
             sys.exit(1)
 
-    data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M KST")
+    # UTC 러너에서도 KST 기준 시각을 기록한다 (BUG-01)
+    data["updated_at"] = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M KST")
 
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)

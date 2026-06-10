@@ -14,7 +14,6 @@ import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
@@ -370,14 +369,20 @@ def fetch_bithumb_current_price(symbol):
 
 
 def fetch_upbit_ohlcv(ticker, start_date=None, include_latest=False):
-    """업비트 REST API로 일봉 조회"""
+    """업비트 REST API로 일봉 조회
+
+    업비트 일봉은 00:00 UTC(=09:00 KST)에 개시되어 candle_date_time_kst와
+    candle_date_time_utc의 날짜 라벨이 항상 동일하다 — 인덱스를 KST 필드로
+    바꿔도 결과는 불변이며, 빗썸(KST 기준)과 의미 일관성을 위해 KST를 쓴다.
+    페이지네이션 커서(to 파라미터)는 API 관례대로 UTC 필드를 유지한다. (BUG-04)
+    """
     return fetch_exchange_day_candles(
         UPBIT_DAY_CANDLES_URL,
         ticker,
         "Upbit",
         start_date,
         pagination_date_field="candle_date_time_utc",
-        index_date_field="candle_date_time_utc",
+        index_date_field="candle_date_time_kst",
         latest_price=fetch_upbit_current_price(ticker) if include_latest else None,
     )
 
@@ -600,6 +605,8 @@ def get_all_data(force_refresh=False):
     data["gold"] = get_gold_data(fx_df)
     data["bitcoin"] = get_bitcoin_data(fx_df)
     data["usdt"] = get_usdt_data(fx_df)
+    # 정적 data.json과 같은 형식의 KST 갱신 시각 (BUG-01)
+    data["updated_at"] = datetime.now(KST).strftime("%Y-%m-%d %H:%M KST")
 
     cache_data = {"timestamp": datetime.now().isoformat(), "data": data}
     with open(CACHE_FILE, "w", encoding="utf-8") as f:
