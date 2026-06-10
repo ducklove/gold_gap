@@ -40,6 +40,10 @@ jobs:
       - name: Generate data.json
         run: python generate_data.py
 
+      # SNS 공유 카드 — 실패해도 데이터 갱신은 계속 (비치명)
+      - name: Generate og.png
+        run: python -m goldgap.og_image data.json og.png || echo "og 이미지 생성 실패 — 계속 진행"
+
       - name: Detect threshold crossings
         id: alerts
         run: |
@@ -59,8 +63,10 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git worktree add --detach /tmp/data-wt FETCH_HEAD
             cp data.json /tmp/data-wt/data.json
+            if [ -f og.png ]; then cp og.png /tmp/data-wt/og.png; fi
             cd /tmp/data-wt
             git add data.json
+            if [ -f og.png ]; then git add og.png; fi
             git commit -m "Update data.json $(date -u +'%Y-%m-%d %H:%M') UTC"
             git push origin HEAD:refs/heads/data
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -92,6 +98,28 @@ jobs:
           else
             gh issue create --title "괴리율 임계 돌파 알림" \
               --label kimchi-alert --body-file /tmp/alert_body.txt
+          fi
+
+      # 선택적 웹훅 알림 — 리포 시크릿이 설정된 경우에만 발송 (없으면 조용히 skip).
+      # DISCORD_WEBHOOK_URL 또는 TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (README 참고)
+      - name: Webhook alert (optional)
+        if: steps.alerts.outputs.found == 'true'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          text="$(cat /tmp/crossings.txt)
+          대시보드: https://ducklove.github.io/gold_gap/"
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            python3 -c 'import json,sys; open("/tmp/discord.json","w").write(json.dumps({"content": sys.argv[1]}))' "$text"
+            curl -sS -X POST -H 'Content-Type: application/json' \
+              -d @/tmp/discord.json "$DISCORD_WEBHOOK_URL" || true
+          fi
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=${text}" || true
           fi
 
       # 실패가 조용히 누적되지 않도록 이슈로 알림 (열린 이슈가 있으면 코멘트로 합침)

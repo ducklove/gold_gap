@@ -20,11 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # data.json은 master가 아닌 data 전용 브랜치에 산다
-      - name: Fetch data.json (data 브랜치)
+      # data.json·og.png는 master가 아닌 data 전용 브랜치에 산다
+      - name: Fetch data files (data 브랜치)
         run: |
           git fetch --depth=1 origin data
           git show FETCH_HEAD:data.json > data.json
+          git show FETCH_HEAD:og.png > og.png || rm -f og.png
 
       - name: Assemble static site
         run: |
@@ -33,6 +34,7 @@ jobs:
           cp -r static _site/static
           cp config.json _site/config.json
           cp data.json _site/data.json
+          if [ -s og.png ]; then cp og.png _site/og.png; fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

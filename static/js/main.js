@@ -12,6 +12,7 @@ import { RANGE_OPTIONS, DEFAULT_RANGE, isValidRange, sliceDataByRange } from './
 import { latestValue, formatKrw, formatUsd, formatAssetKrw } from './format.js';
 import { applyChartDefaults, destroyCharts, renderPriceChart, renderGapChart, renderTable } from './charts.js';
 import { fetchJson, applyClientLiveQuotes } from './live-quotes.js';
+import { gapHistoricalStats, formatHistoricalStats } from './stats.js';
 
 const THEME_STORAGE_KEY = 'theme';
 
@@ -357,6 +358,11 @@ function updateCards(rangedData, config, activeData, assetData) {
     setText('max-gap', maxGap.toFixed(2) + '%');
     setText('avg-gap', avgGap.toFixed(2) + '%');
     setText('high-gap-count', rangedData.high_gap_periods.length + '회');
+
+    // 역사적 위치는 조회 기간과 무관하게 전체 기간(activeData)을 기준으로 한다.
+    const histText = formatHistoricalStats(gapHistoricalStats(activeData.gap_pct));
+    setText('hist-percentile', histText ? histText.value : '-');
+    setText('hist-percentile-sub', histText ? histText.sub : '');
 
     const el = document.getElementById('current-gap');
     const card = el.closest('.card');

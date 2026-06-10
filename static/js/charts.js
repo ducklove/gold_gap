@@ -41,6 +41,31 @@ export function destroyCharts() {
     if (gapChartInstance) { gapChartInstance.destroy(); gapChartInstance = null; }
 }
 
+// 차트 줌: 드래그 박스 줌(x축) + Ctrl+휠 줌 + Shift+드래그 팬.
+// zoom 플러그인 CDN 로드 실패 시 조용히 비활성(차트 자체는 정상 동작).
+function zoomOptions() {
+    const available = typeof Chart !== 'undefined' && !!Chart.registry.plugins.get('zoom');
+    if (!available) return {};
+    return {
+        zoom: {
+            zoom: {
+                drag: { enabled: true, backgroundColor: 'rgba(108, 140, 255, 0.18)' },
+                wheel: { enabled: true, modifierKey: 'ctrl' },
+                mode: 'x',
+            },
+            pan: { enabled: true, mode: 'x', modifierKey: 'shift' },
+        },
+    };
+}
+
+// 더블클릭 = 줌 리셋. addEventListener는 재렌더마다 누적되므로 프로퍼티 할당으로 교체.
+function bindZoomReset(canvas, getInstance) {
+    canvas.ondblclick = () => {
+        const chart = getInstance();
+        if (chart && typeof chart.resetZoom === 'function') chart.resetZoom();
+    };
+}
+
 export function renderPriceChart(data, config) {
     const ctx = document.getElementById('priceChart').getContext('2d');
     const theme = getChartTheme();
@@ -95,6 +120,7 @@ export function renderPriceChart(data, config) {
                 },
             },
             plugins: {
+                ...zoomOptions(),
                 legend: {
                     labels: { usePointStyle: true, pointStyle: 'circle', padding: 20, font: { size: 12 }, color: theme.textDim },
                 },
@@ -115,6 +141,7 @@ export function renderPriceChart(data, config) {
             },
         },
     });
+    bindZoomReset(ctx.canvas, () => priceChartInstance);
 }
 
 // |gap| >= threshold 구간을 annotation box로 표시(괴리율 차트 배경 하이라이트).
@@ -211,6 +238,7 @@ export function renderGapChart(data, config) {
                 },
             },
             plugins: {
+                ...zoomOptions(),
                 legend: { display: false },
                 annotation: { annotations: boxes },
                 tooltip: {
@@ -230,6 +258,7 @@ export function renderGapChart(data, config) {
             },
         },
     });
+    bindZoomReset(ctx.canvas, () => gapChartInstance);
 }
 
 export function renderTable(periods, config) {

@@ -7,3 +7,4 @@ cache/
 *.egg-info/
 .claude/worktrees/
 data.json
+og.png

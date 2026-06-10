@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>김치프리미엄 대시보드</title>
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="김치프리미엄 대시보드">
+    <meta property="og:description" content="금·비트코인·이더리움·USDT의 국내 거래가와 환산 국제가 괴리율을 30분마다 추적합니다.">
+    <meta property="og:url" content="https://ducklove.github.io/gold_gap/">
+    <!-- og.png는 데이터 갱신 시 자동 생성돼 data 브랜치에 커밋되고 배포가 사이트 루트로 복사 -->
+    <meta property="og:image" content="https://ducklove.github.io/gold_gap/og.png">
+    <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/svg+xml" href="static/icon.svg?v=1">
     <script>
     // FOUC 방지 부트 스크립트 — 인라인 유지(외부 모듈보다 먼저 실행돼야 함).
@@ -46,6 +53,8 @@
          모듈 실행 시점에 Chart 전역과 annotation 플러그인이 항상 준비돼 있다. -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <!-- 줌 플러그인: 드래그 박스 줌 + Ctrl+휠 줌. 로드 실패해도 차트는 정상 동작(charts.js 가드) -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 </head>
 <body>
     <div class="header">
@@ -114,6 +123,11 @@
                 <div class="card">
                     <div class="card-label" id="high-gap-label">5%+ 발생</div>
                     <div class="card-value" id="high-gap-count">-</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">역사적 위치</div>
+                    <div class="card-value" id="hist-percentile">-</div>
+                    <div class="card-sub" id="hist-percentile-sub"></div>
                 </div>
             </div>
 
