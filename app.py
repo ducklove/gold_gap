@@ -7,7 +7,7 @@ import os
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
-from data_fetcher import get_all_data
+from goldgap.orchestrators import get_all_data
 
 logging.basicConfig(
     level=logging.INFO,

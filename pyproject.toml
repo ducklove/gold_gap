@@ -1,0 +1,13 @@
+# 패키지/도구 설정 — 런타임 의존성 설치는 requirements.txt 소관 (배포 팀 관리)
+[project]
+name = "goldgap"
+version = "0.1.0"
+description = "김치프리미엄 멀티 자산 대시보드 백엔드 (gold/BTC/USDT 국내·국제 가격 괴리율)"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
