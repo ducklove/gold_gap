@@ -156,7 +156,8 @@ select {
 .theme-toggle:focus-visible,
 .refresh-btn:focus-visible,
 .hub-link:focus-visible,
-.tab-btn:focus-visible {
+.tab-btn:focus-visible,
+.mode-btn:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
@@ -560,6 +561,29 @@ td.highlight {
 
     .section-header h2 {
         font-size: 16px;
+    }
+
+    /* 터치 타겟 보정 — 시각 크기는 그대로 두고 히트 영역만 세로로 확장해 40px 이상 확보.
+       가로 확장은 이웃 버튼(gap 4px)과 겹치므로 하지 않는다. */
+    .tab-btn,
+    .mode-btn,
+    .refresh-btn,
+    .theme-toggle,
+    .hub-link {
+        position: relative;
+    }
+
+    .tab-btn::after,
+    .mode-btn::after,
+    .refresh-btn::after,
+    .theme-toggle::after,
+    .hub-link::after {
+        content: '';
+        position: absolute;
+        top: -4px;
+        bottom: -4px;
+        left: 0;
+        right: 0;
     }
 }
 

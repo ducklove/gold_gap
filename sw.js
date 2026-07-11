@@ -16,7 +16,8 @@
 //     캐시되면 안 되고, POST 등은 캐시 의미가 없다.
 
 // v2: 가격 변동 분해(decompose.js)·한/영 i18n(i18n.js) 추가 및 앱 셸 전반 갱신.
-const CACHE = 'goldgap-v2';
+// v3: 모바일 차트 높이·터치 타겟·상관 셀 접근성 정비(style.css/charts.js/index.html 갱신).
+const CACHE = 'goldgap-v3';
 
 // 앱 셸 프리캐시 목록 — './'는 SW 위치 기준 사이트 루트 문서.
 const APP_SHELL = [

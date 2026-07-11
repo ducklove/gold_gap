@@ -48,6 +48,23 @@ export function destroyCharts() {
     if (marketChartInstance) { marketChartInstance.destroy(); marketChartInstance = null; }
 }
 
+// 좁은 화면에서 aspectRatio 2.35는 차트 높이가 ~150px까지 낮아져 판독이 어렵다 —
+// 모바일(≤560px)에서는 더 낮은 비율로 충분한 높이를 확보한다. 재계산은 모든
+// 재렌더 경로(탭/기간/테마/언어 전환·새로고침)가 거치는 render* 호출마다 일어난다.
+function chartAspectRatio() {
+    try {
+        return window.matchMedia('(max-width: 560px)').matches ? 1.5 : 2.35;
+    } catch (e) {
+        return 2.35;
+    }
+}
+
+// canvas 차트는 스크린리더에 빈 요소로 보이므로 role="img" + 요약 aria-label을 부여한다.
+function labelCanvas(canvas, label) {
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', label);
+}
+
 // 차트 줌: 드래그 박스 줌(x축) + Ctrl+휠 줌 + Shift+드래그 팬.
 // zoom 플러그인 CDN 로드 실패 시 조용히 비활성(차트 자체는 정상 동작).
 function zoomOptions() {
@@ -76,6 +93,7 @@ function bindZoomReset(canvas, getInstance) {
 export function renderPriceChart(data, config) {
     const ctx = document.getElementById('priceChart').getContext('2d');
     const theme = getChartTheme();
+    labelCanvas(ctx.canvas, t('chart.priceTitle', { label: config.label, unit: config.unit }));
     priceChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
@@ -108,7 +126,7 @@ export function renderPriceChart(data, config) {
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            aspectRatio: 2.35,
+            aspectRatio: chartAspectRatio(),
             interaction: { mode: 'index', intersect: false },
             scales: {
                 x: {
@@ -211,6 +229,7 @@ export function renderGapChart(data, config) {
     gradient.addColorStop(0, config.gapColor + '30');
     gradient.addColorStop(1, config.gapColor + '02');
 
+    labelCanvas(ctx.canvas, t('section.gapTrend'));
     gapChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
@@ -230,7 +249,7 @@ export function renderGapChart(data, config) {
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            aspectRatio: 2.35,
+            aspectRatio: chartAspectRatio(),
             interaction: { mode: 'index', intersect: false },
             scales: {
                 x: {
@@ -342,6 +361,7 @@ export function renderGapHistogram(data, config) {
     }
 
     const ctx = canvas.getContext('2d');
+    labelCanvas(canvas, t('section.gapHist'));
     gapHistChartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -359,7 +379,7 @@ export function renderGapHistogram(data, config) {
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            aspectRatio: 2.35,
+            aspectRatio: chartAspectRatio(),
             scales: {
                 x: {
                     type: 'category',
@@ -422,13 +442,14 @@ export function renderMarketChart(ranged, seriesDefs) {
     if (!datasets.length) return;
 
     const ctx = canvas.getContext('2d');
+    labelCanvas(canvas, t('market.normalized'));
     marketChartInstance = new Chart(ctx, {
         type: 'line',
         data: { labels: ranged.dates, datasets },
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            aspectRatio: 2.35,
+            aspectRatio: chartAspectRatio(),
             interaction: { mode: 'index', intersect: false },
             scales: {
                 x: {
@@ -465,6 +486,12 @@ export function renderCorrelationTable(corr) {
     const table = document.getElementById('corrTable');
     if (!table) return;
     table.replaceChildren();
+    // 셀 상세 라인(탭/클릭 경로)은 재렌더마다 초기화 — 이전 기간의 표본수가 남지 않게.
+    const cellInfo = document.getElementById('corr-cell-info');
+    if (cellInfo) {
+        cellInfo.hidden = true;
+        cellInfo.textContent = '';
+    }
     if (!corr || !Array.isArray(corr.labels) || corr.labels.length === 0) {
         table.style.display = 'none';
         return;
@@ -504,12 +531,27 @@ export function renderCorrelationTable(corr) {
                 const base = r >= 0 ? 'var(--up)' : 'var(--down)';
                 td.style.backgroundColor = `color-mix(in srgb, ${base} ${ratio}%, var(--surface))`;
             }
-            td.title = rowLabel + ' × ' + colLabel + ' · n=' + count;
+            // hover 전용 title은 터치·스크린리더에 닿지 않으므로 aria-label을 병행한다.
+            const detail = rowLabel + ' × ' + colLabel
+                + ' · r=' + (r == null ? '-' : r.toFixed(2)) + ' · n=' + count;
+            td.title = detail;
+            td.setAttribute('aria-label', detail);
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
     });
     table.appendChild(tbody);
+
+    // 터치 환경 대체 경로: 셀 탭/클릭 시 title과 동일 내용을 캡션 라인에 표시.
+    // addEventListener는 재렌더마다 누적되므로 프로퍼티 할당으로 교체(bindZoomReset과 동일 패턴).
+    if (cellInfo) {
+        table.onclick = (event) => {
+            const cell = event.target && event.target.closest && event.target.closest('td.corr-cell');
+            if (!cell) return;
+            cellInfo.textContent = cell.title;
+            cellInfo.hidden = false;
+        };
+    }
 }
 
 export function renderTable(periods, config) {
