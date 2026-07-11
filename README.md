@@ -49,6 +49,7 @@ templates/index.html  # 대시보드 마크업
 static/js/          # 프론트엔드 ES 모듈
 static/style.css    # 테마(라이트/다크) 스타일
 tests/              # pytest (구간 탐지·병합·직렬화 회귀 테스트)
+tests/js/           # node --test (static/js 순수 모듈 단위 테스트)
 docs/project-review.html  # 구조·품질 리뷰 및 로드맵 문서
 ```
 
@@ -69,6 +70,9 @@ python generate_data.py  # data.json 증분 갱신
 # 3) 테스트·린트 (data.json 없으면 골든 회귀 테스트는 안내와 함께 skip)
 pytest -q
 ruff check .
+
+# 4) 프론트엔드 JS 단위 테스트 (Node 20+, 의존성 설치 불필요)
+node --test tests/js
 ```
 
 `app.py`는 개발 편의용입니다. `/data.json`·`/config.json`·`/sw.js`·`/manifest.webmanifest`는 리포 루트 파일을 그대로 서빙하고, `/api/data`는 24시간 파일 캐시를 사용한 실시간 수집 경로입니다.
@@ -186,7 +190,7 @@ R_dom(%)       = R_usd(%p)           + R_fx(%p)          + R_gap(%p, 잔차)
 |---|---|---|
 | `update-data.yml` | 30분 cron / 수동 | data.json 증분 갱신 → `data` 브랜치 커밋, 변경 시 배포 트리거, 임계 돌파·실패 이슈 알림 |
 | `deploy.yml` | master push / 수동 | `data` 브랜치의 data.json + master의 정적 산출물 조립 → GitHub Pages 배포 |
-| `ci.yml` | push·PR (`data` 브랜치 제외) | `data` 브랜치에서 골든 data.json fetch 후 ruff + pytest |
+| `ci.yml` | push·PR (`data` 브랜치 제외) | `data` 브랜치에서 골든 data.json fetch 후 ruff + pytest + node --test |
 
 데이터는 `data` orphan 브랜치에만 커밋된다 — master를 클론해도 data.json이 없으며,
 위 로컬 개발 0번 명령으로 받아온다.

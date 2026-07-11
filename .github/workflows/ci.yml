@@ -44,3 +44,11 @@ jobs:
 
       - name: Test (pytest)
         run: pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # static/js 순수 모듈(periods/stats/market/decompose/format/i18n) 단위 테스트
+      - name: Test (node --test)
+        run: node --test tests/js
