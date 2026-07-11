@@ -17,7 +17,8 @@
 
 // v2: 가격 변동 분해(decompose.js)·한/영 i18n(i18n.js) 추가 및 앱 셸 전반 갱신.
 // v3: 모바일 차트 높이·터치 타겟·상관 셀 접근성 정비(style.css/charts.js/index.html 갱신).
-const CACHE = 'goldgap-v3';
+// v4: 구간 테이블 헤더 정렬(table-sort.js)·핀치 줌·회전 시 차트 비율 재적용·한글 폰트 스택.
+const CACHE = 'goldgap-v4';
 
 // 앱 셸 프리캐시 목록 — './'는 SW 위치 기준 사이트 루트 문서.
 const APP_SHELL = [
@@ -32,6 +33,7 @@ const APP_SHELL = [
     'static/js/live-quotes.js',
     'static/js/market.js',
     'static/js/decompose.js',
+    'static/js/table-sort.js',
     'static/js/i18n.js',
     'static/icon.svg',
     'manifest.webmanifest',

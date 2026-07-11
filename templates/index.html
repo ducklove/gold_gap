@@ -69,7 +69,10 @@
          모듈 실행 시점에 Chart 전역과 annotation 플러그인이 항상 준비돼 있다. -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
-    <!-- 줌 플러그인: 드래그 박스 줌 + Ctrl+휠 줌. 로드 실패해도 차트는 정상 동작(charts.js 가드) -->
+    <!-- Hammer.js: 아래 줌 플러그인의 자체 의존성(UMD가 전역 Hammer 참조) — 터치
+         핀치 줌·팬 제스처 인식 백엔드. 로드 실패 시 제스처만 비활성(휠/드래그 줌 정상). -->
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <!-- 줌 플러그인: 드래그 박스 줌 + Ctrl+휠 줌 + 핀치 줌. 로드 실패해도 차트는 정상 동작(charts.js 가드) -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 </head>
 <body>
@@ -219,11 +222,14 @@
                 <div class="table-scroll">
                     <table id="gapTable">
                         <thead>
+                            <!-- 정렬 가능 헤더: th[data-sort-key] + 내부 button(클릭·Enter/Space 기본 지원).
+                                 aria-sort는 charts.js(updateSortIndicators)가 현재 정렬 컬럼에만 부여하고,
+                                 ▲/▼ 표시는 style.css th[aria-sort] 규칙이 그린다. -->
                             <tr>
-                                <th data-i18n="table.start">시작일</th>
-                                <th data-i18n="table.end">종료일</th>
-                                <th data-i18n="table.maxGap">최대 괴리율</th>
-                                <th data-i18n="table.duration">지속일수</th>
+                                <th scope="col" data-sort-key="start"><button type="button" class="th-sort-btn" data-i18n="table.start">시작일</button></th>
+                                <th scope="col" data-sort-key="end"><button type="button" class="th-sort-btn" data-i18n="table.end">종료일</button></th>
+                                <th scope="col" data-sort-key="max_gap"><button type="button" class="th-sort-btn" data-i18n="table.maxGap">최대 괴리율</button></th>
+                                <th scope="col" data-sort-key="duration_days"><button type="button" class="th-sort-btn" data-i18n="table.duration">지속일수</button></th>
                             </tr>
                         </thead>
                         <tbody></tbody>

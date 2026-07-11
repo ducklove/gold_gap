@@ -14,6 +14,7 @@ import { latestValue, formatKrw, formatUsd, formatAssetKrw } from './format.js';
 import {
     applyChartDefaults, destroyCharts, renderPriceChart, renderGapChart, renderGapHistogram,
     renderTable, renderMarketChart, renderCorrelationTable,
+    initPeriodTableSort, MOBILE_CHART_MEDIA_QUERY,
 } from './charts.js';
 import { fetchJson, applyClientLiveQuotes } from './live-quotes.js';
 import { gapHistoricalStats, formatHistoricalStats } from './stats.js';
@@ -642,6 +643,38 @@ function bindRefreshButton() {
     refreshBtn.addEventListener('click', refreshCurrentData);
 }
 
+// 회전·리사이즈로 폰↔데스크톱 폭 경계(MOBILE_CHART_MEDIA_QUERY)를 넘으면
+// chartAspectRatio가 달라지므로 기존 재렌더 경로(switchTab)를 호출해 비율을
+// 재적용한다. 1차 트리거는 matchMedia change(경계 통과 시에만 발화), 2차는
+// change가 오지 않는 환경(일부 브라우저 회전·에뮬레이션)을 위한
+// resize/orientationchange 디바운스 폴백 — 실제 경계 통과 여부를 검사하므로
+// 어느 경로로 와도 재렌더는 경계 통과당 1회다. 부트에서 1회만 등록(중복 방지).
+function bindChartRatioWatcher() {
+    let mql = null;
+    try {
+        mql = window.matchMedia(MOBILE_CHART_MEDIA_QUERY);
+    } catch (e) {
+        return; // matchMedia 미지원 — 렌더 시점 비율 고정(기존 동작)
+    }
+    let wasMobile = mql.matches;
+    const applyIfCrossed = () => {
+        const nowMobile = window.matchMedia(MOBILE_CHART_MEDIA_QUERY).matches;
+        if (nowMobile === wasMobile) return; // 경계 통과 없음 — 재렌더 불필요
+        wasMobile = nowMobile;
+        if (allData && allData[currentAsset]) switchTab(currentAsset);
+    };
+    if (typeof mql.addEventListener === 'function') mql.addEventListener('change', applyIfCrossed);
+    else if (typeof mql.addListener === 'function') mql.addListener(applyIfCrossed); // 구형 Safari 폴백
+
+    let resizeTimer = null;
+    const debounced = () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(applyIfCrossed, 200);
+    };
+    window.addEventListener('resize', debounced);
+    window.addEventListener('orientationchange', debounced);
+}
+
 // ----- 언어 토글 -----
 
 // 언어 전환 후 전체 재렌더: 정적 라벨 → 기간 토글('전체'/'All') → URL →
@@ -682,4 +715,6 @@ applyChartDefaults();
 bindThemeButton();
 bindRefreshButton();
 bindLangButton();
+bindChartRatioWatcher();
+initPeriodTableSort();  // 구간 테이블 헤더 정렬 — 정적 thead에 1회 바인딩
 loadData();

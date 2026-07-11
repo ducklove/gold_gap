@@ -7,6 +7,7 @@
 import { formatPrice } from './format.js';
 import { buildGapHistogram } from './stats.js';
 import { normalizeTo100 } from './market.js';
+import { DEFAULT_PERIOD_SORT, nextSortState, sortPeriods } from './table-sort.js';
 import { t } from './i18n.js';
 
 let priceChartInstance = null;
@@ -38,7 +39,10 @@ export function applyChartDefaults() {
     const theme = getChartTheme();
     Chart.defaults.color = theme.textDim;
     Chart.defaults.borderColor = theme.grid;
-    Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    // body(style.css)와 동일한 스택 — 한글 폰트를 명시해 차트 라벨(일수·괴리율 등)도
+    // Windows에서 맑은 고딕으로 통일되게 한다.
+    Chart.defaults.font.family =
+        "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Segoe UI', sans-serif";
 }
 
 export function destroyCharts() {
@@ -48,12 +52,16 @@ export function destroyCharts() {
     if (marketChartInstance) { marketChartInstance.destroy(); marketChartInstance = null; }
 }
 
+// 모바일 차트 비율 분기 기준 폭 — main.js가 같은 쿼리로 change 리스너를 등록해
+// 회전/리사이즈로 이 경계를 넘을 때 재렌더(비율 재적용)를 트리거한다.
+export const MOBILE_CHART_MEDIA_QUERY = '(max-width: 560px)';
+
 // 좁은 화면에서 aspectRatio 2.35는 차트 높이가 ~150px까지 낮아져 판독이 어렵다 —
 // 모바일(≤560px)에서는 더 낮은 비율로 충분한 높이를 확보한다. 재계산은 모든
-// 재렌더 경로(탭/기간/테마/언어 전환·새로고침)가 거치는 render* 호출마다 일어난다.
+// 재렌더 경로(탭/기간/테마/언어 전환·새로고침·매체 경계 통과)가 거치는 render* 호출마다 일어난다.
 function chartAspectRatio() {
     try {
-        return window.matchMedia('(max-width: 560px)').matches ? 1.5 : 2.35;
+        return window.matchMedia(MOBILE_CHART_MEDIA_QUERY).matches ? 1.5 : 2.35;
     } catch (e) {
         return 2.35;
     }
@@ -65,8 +73,10 @@ function labelCanvas(canvas, label) {
     canvas.setAttribute('aria-label', label);
 }
 
-// 차트 줌: 드래그 박스 줌(x축) + Ctrl+휠 줌 + Shift+드래그 팬.
-// zoom 플러그인 CDN 로드 실패 시 조용히 비활성(차트 자체는 정상 동작).
+// 차트 줌: 드래그 박스 줌(x축) + Ctrl+휠 줌 + 터치 핀치 줌 + Shift+드래그 팬.
+// 핀치/팬 제스처 인식은 Hammer.js(index.html CDN)가 담당 — Hammer 로드 실패 시
+// 플러그인이 제스처만 조용히 비활성화한다(휠/드래그 줌은 정상).
+// zoom 플러그인 자체가 로드 실패해도 조용히 비활성(차트는 정상 동작).
 function zoomOptions() {
     const available = typeof Chart !== 'undefined' && !!Chart.registry.plugins.get('zoom');
     if (!available) return {};
@@ -75,6 +85,7 @@ function zoomOptions() {
             zoom: {
                 drag: { enabled: true, backgroundColor: 'rgba(108, 140, 255, 0.18)' },
                 wheel: { enabled: true, modifierKey: 'ctrl' },
+                pinch: { enabled: true },
                 mode: 'x',
             },
             pan: { enabled: true, mode: 'x', modifierKey: 'shift' },
@@ -82,12 +93,16 @@ function zoomOptions() {
     };
 }
 
-// 더블클릭 = 줌 리셋. addEventListener는 재렌더마다 누적되므로 프로퍼티 할당으로 교체.
+// 더블클릭(터치 더블탭) = 줌 리셋. addEventListener는 재렌더마다 누적되므로 프로퍼티 할당으로 교체.
+// touch-action: Hammer가 핀치/팬 인식을 위해 canvas에 none을 적용해 차트 위에서
+// 페이지 세로 스크롤이 막히므로 pan-y로 되돌린다 — 한 손가락 세로 스크롤은
+// 브라우저에 맡기고 두 손가락 핀치(줌)만 차트가 받는다.
 function bindZoomReset(canvas, getInstance) {
     canvas.ondblclick = () => {
         const chart = getInstance();
         if (chart && typeof chart.resetZoom === 'function') chart.resetZoom();
     };
+    canvas.style.touchAction = 'pan-y';
 }
 
 export function renderPriceChart(data, config) {
@@ -554,24 +569,30 @@ export function renderCorrelationTable(corr) {
     }
 }
 
-export function renderTable(periods, config) {
+// ----- 괴리율 구간 테이블(헤더 정렬 지원) -----
+// 정렬 상태는 세션 동안 유지(탭/기간/테마/언어 전환에도) — 재렌더는 최신 데이터에
+// 같은 정렬을 다시 적용한다. 초기값은 기존 표시 순서(max_gap 내림차순)와 동일.
+let periodSort = { ...DEFAULT_PERIOD_SORT };
+let lastPeriods = [];
+
+// aria-sort는 현재 정렬 컬럼의 th에만 부여(ARIA 규약 — 나머지는 속성 제거).
+// 방향 표시(▲/▼)는 style.css가 th[aria-sort] 셀렉터로 그린다.
+function updateSortIndicators() {
+    document.querySelectorAll('#gapTable thead th[data-sort-key]').forEach(th => {
+        if (th.dataset.sortKey === periodSort.key) {
+            th.setAttribute('aria-sort', periodSort.direction === 'asc' ? 'ascending' : 'descending');
+        } else {
+            th.removeAttribute('aria-sort');
+        }
+    });
+}
+
+function renderTableBody() {
     const tbody = document.querySelector('#gapTable tbody');
+    if (!tbody) return;
     tbody.replaceChildren();
-
-    const noPeriods = document.getElementById('no-periods');
-    const table = document.getElementById('gapTable');
-
-    if (!periods || periods.length === 0) {
-        table.style.display = 'none';
-        noPeriods.textContent = t('table.noPeriods', { threshold: config.threshold });
-        noPeriods.style.display = 'block';
-        return;
-    }
-
-    table.style.display = '';
-    noPeriods.style.display = 'none';
-
-    [...periods].sort((a, b) => b.max_gap - a.max_gap).forEach(p => {
+    updateSortIndicators();
+    sortPeriods(lastPeriods, periodSort.key, periodSort.direction).forEach(p => {
         const tr = document.createElement('tr');
         // innerHTML 대신 textContent로 셀 조립 — 데이터 값이 마크업으로 해석되지 않게.
         const cells = [
@@ -588,4 +609,38 @@ export function renderTable(periods, config) {
         });
         tbody.appendChild(tr);
     });
+}
+
+// 헤더 클릭/키보드 정렬 — th 내부의 button이 Enter/Space를 기본 지원하고 클릭으로
+// 버블링된다. thead는 정적 마크업이라 부트 시 1회만 바인딩(main.js에서 호출) —
+// 재렌더마다 리스너가 누적되지 않는다.
+export function initPeriodTableSort() {
+    const thead = document.querySelector('#gapTable thead');
+    if (!thead) return;
+    thead.addEventListener('click', (event) => {
+        const th = event.target && event.target.closest
+            ? event.target.closest('th[data-sort-key]') : null;
+        if (!th) return;
+        periodSort = nextSortState(periodSort, th.dataset.sortKey);
+        renderTableBody();
+    });
+}
+
+export function renderTable(periods, config) {
+    lastPeriods = Array.isArray(periods) ? periods : [];
+
+    const noPeriods = document.getElementById('no-periods');
+    const table = document.getElementById('gapTable');
+
+    renderTableBody(); // 빈 목록이어도 본문·정렬 표시를 초기화한다.
+
+    if (lastPeriods.length === 0) {
+        table.style.display = 'none';
+        noPeriods.textContent = t('table.noPeriods', { threshold: config.threshold });
+        noPeriods.style.display = 'block';
+        return;
+    }
+
+    table.style.display = '';
+    noPeriods.style.display = 'none';
 }
