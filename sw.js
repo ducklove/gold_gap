@@ -25,7 +25,7 @@ const CACHE = 'goldgap-v5';
 const APP_SHELL = [
     './',
     // index.html이 ?v= 캐시버스터를 붙여 요청하는 자원은 같은 URL로 프리캐시해야 적중한다
-    // (tests/test_ecosystem.py가 index.html과의 일치를 검사).
+    // (tests/test_ecosystem_shell.py가 index.html과의 일치를 검사).
     'static/vc-tokens.css?v=20260930-vc',
     'static/vc-shell.js?v=20260930-vc',
     'static/style.css?v=20260930-vc',

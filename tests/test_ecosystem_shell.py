@@ -94,6 +94,19 @@ def test_style_aliases_direction_colours_and_font():
     assert re.search(r"body\s*\{[^}]*font-family:\s*var\(--vc-font-sans", css)
 
 
+def test_correlation_cells_use_diluted_base_in_dark():
+    """다크의 파스텔 --vc-up/--vc-down을 60% 혼합하면 --text 대비가 3.3:1로 떨어진다 — 다크 기준색은 희석."""
+    css = _read("static", "style.css")
+    dark = re.search(r':root,\s*:root\[data-theme="dark"\]\s*\{([^}]*--corr-up[^}]*)\}', css)
+    assert dark, "dark --corr-up/--corr-down block missing"
+    assert "--corr-up: color-mix(in srgb, var(--up) 67%, var(--surface))" in dark.group(1)
+    assert "--corr-down: color-mix(in srgb, var(--down) 67%, var(--surface))" in dark.group(1)
+    light = re.search(r':root\[data-theme="light"\]\s*\{([^}]*--corr-up[^}]*)\}', css)
+    assert light and "--corr-up: var(--up)" in light.group(1)
+    charts = _read("static", "js", "charts.js")
+    assert "var(--corr-up, var(--up))" in charts and "var(--corr-down, var(--down))" in charts
+
+
 def test_service_worker_precaches_versioned_assets(html):
     sw = _read("sw.js")
     for asset in ("static/vc-tokens.css", "static/vc-shell.js", "static/style.css"):

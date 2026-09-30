@@ -542,9 +542,10 @@ export function renderCorrelationTable(corr) {
                 td.textContent = '-'; // 표본 부족(n < 20) 또는 분산 0
             } else {
                 td.textContent = r.toFixed(2);
-                // 혼합 최대 60%라 양 테마 모두에서 --text 글자 대비가 유지된다.
+                // 혼합 최대 60% + 다크에선 --corr-up/--corr-down이 미리 희석된 기준색이라(style.css)
+                // 양 테마 모두에서 --text 글자 대비가 유지된다.
                 const ratio = Math.round(Math.abs(r) * 60); // |r|=1 → 60% 혼합
-                const base = r >= 0 ? 'var(--up)' : 'var(--down)';
+                const base = r >= 0 ? 'var(--corr-up, var(--up))' : 'var(--corr-down, var(--down))';
                 td.style.backgroundColor = `color-mix(in srgb, ${base} ${ratio}%, var(--surface))`;
             }
             // hover 전용 title은 터치·스크린리더에 닿지 않으므로 aria-label을 병행한다.
