@@ -18,12 +18,18 @@
 // v2: 가격 변동 분해(decompose.js)·한/영 i18n(i18n.js) 추가 및 앱 셸 전반 갱신.
 // v3: 모바일 차트 높이·터치 타겟·상관 셀 접근성 정비(style.css/charts.js/index.html 갱신).
 // v4: 구간 테이블 헤더 정렬(table-sort.js)·핀치 줌·회전 시 차트 비율 재적용·한글 폰트 스택.
-const CACHE = 'goldgap-v4';
+// v5: Value Compass 에코시스템 바(vc-shell.js)·공용 토큰(vc-tokens.css)·ecosystem.js, 방향색 alias.
+// v6: vc-shell.js·vc-tokens.css ?v= 라벨을 정본 VCShell.version(1.1.0)으로 통일.
+const CACHE = 'goldgap-v6';
 
 // 앱 셸 프리캐시 목록 — './'는 SW 위치 기준 사이트 루트 문서.
 const APP_SHELL = [
     './',
-    'static/style.css',
+    // index.html이 ?v= 캐시버스터를 붙여 요청하는 자원은 같은 URL로 프리캐시해야 적중한다
+    // (tests/test_ecosystem_shell.py가 index.html과의 일치를 검사).
+    'static/vc-tokens.css?v=1.1.0',
+    'static/vc-shell.js?v=1.1.0',
+    'static/style.css?v=20260930-vc',
     'static/js/main.js',
     'static/js/config.js',
     'static/js/charts.js',
@@ -35,6 +41,7 @@ const APP_SHELL = [
     'static/js/decompose.js',
     'static/js/table-sort.js',
     'static/js/i18n.js',
+    'static/js/ecosystem.js',
     'static/icon.svg',
     'manifest.webmanifest',
 ];
@@ -57,9 +64,10 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// 데이터성 요청(전략 ①) 판별 — 같은 출처의 data.json / og.png / api/ 경로.
+// 데이터성 요청(전략 ①) 판별 — 같은 출처의 data.json / summary.json·version.json(허브용 요약) / og.png / api/ 경로.
 function isDataRequest(url) {
     return /\/data\.json$/.test(url.pathname)
+        || /\/(summary|version)\.json$/.test(url.pathname)
         || /\/og\.png$/.test(url.pathname)
         || /\/api\//.test(url.pathname);
 }

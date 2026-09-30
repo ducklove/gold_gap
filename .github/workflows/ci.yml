@@ -50,5 +50,13 @@ jobs:
           node-version: '20'
 
       # static/js 순수 모듈(periods/stats/market/decompose/format/i18n) 단위 테스트
+      # Node 20·22+ 공통 — 디렉터리 인자는 Node 22+에서 모듈로 해석돼 실패하고, 따옴표 친 glob은
+      # Node 21+만 해석한다. 셸이 펼치는 비인용 glob은 모든 버전에서 동작(npm test와 동일).
       - name: Test (node --test)
-        run: node --test tests/js
+        run: node --test tests/js/*.test.mjs
+
+      # 골든 data.json으로 허브용 summary.json을 오프라인 생성해 envelope v1 검증까지 확인
+      - name: Hub summary smoke (envelope v1)
+        run: |
+          python -m goldgap.hub_summary --data data.json --summary /tmp/summary.json --version /tmp/version.json
+          python goldgap/vc_publish.py validate /tmp/summary.json

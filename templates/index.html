@@ -20,41 +20,45 @@
     <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
     <link rel="icon" type="image/svg+xml" href="static/icon.svg?v=1">
     <link rel="apple-touch-icon" href="static/icons/apple-touch-icon.png">
+    <!-- 테마·embed pre-paint 부트 (Value Compass 공용): ?theme=dark|light는 저장 없이 적용, 공용 'theme' 키
+         (구 'preferred-theme' 키는 1회 이전), 미설정 시 prefers-color-scheme, ?embed → html[data-embed].
+         블록 안은 value-invest scripts/sync-ecosystem.mjs가 채운다 — 직접 수정 금지. 모든 스타일시트보다 먼저. -->
+    <!-- vc:theme-boot --><script>
+/* vc-theme-boot v1 (value-invest static/ecosystem/vc-theme-boot.js) — pre-paint theme; inlined by sync-ecosystem, do not edit copies. */
+(function () {
+  var d = document.documentElement, p = null, s = null, t, v, i;
+  var legacy = ['bondmate.theme', 'eiayn:theme:v1', 'spac-hunter-theme', 'preferred-theme', 'nps-theme'];
+  try { p = new URLSearchParams(location.search); } catch (e) { p = null; }
+  try {
+    s = localStorage.getItem('theme');
+    if (s === null) {
+      for (i = 0; i < legacy.length && s === null; i++) {
+        v = localStorage.getItem(legacy[i]);
+        if (v && v.charAt(0) === '"') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+        if (v === 'light' || v === 'dark') { s = v; localStorage.setItem('theme', v); }
+      }
+    }
+  } catch (e) { s = null; }
+  t = p && p.get('theme');
+  if (t !== 'light' && t !== 'dark') t = s === 'light' || s === 'dark' ? s : null;
+  if (!t) t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  d.setAttribute('data-theme', t);
+  v = p && p.get('embed');
+  if ((v !== null && v !== undefined && v !== '0' && v !== 'false') || (p && p.get('headless') === '1')) d.setAttribute('data-embed', v || '');
+})();
+</script><!-- /vc:theme-boot -->
     <script>
-    // FOUC 방지 부트 스크립트 — 인라인 유지(외부 모듈보다 먼저 실행돼야 함).
-    // 테마 우선순위: ?theme=dark|light > localStorage > 시스템(prefers-color-scheme) > light.
-    // 언어 우선순위: ?lang=en|ko > localStorage('lang') > ko — i18n.js와 같은 규칙.
-    //   (텍스트 치환은 main.js 모듈의 applyStaticStrings가 수행 — 여기선 lang 속성만 선반영)
-    // ?embed: 헤더/푸터 등 standalone 크롬 숨김.
+    // 언어 pre-paint — ?lang=en|ko > localStorage('lang') > ko (i18n.js와 같은 규칙).
+    // 텍스트 치환은 main.js 모듈의 applyStaticStrings가 수행 — 여기선 lang 속성만 선반영.
     (function() {
         try {
-            var params = new URLSearchParams(location.search);
-            var urlTheme = params.get('theme');
-            var stored = localStorage.getItem('theme') || localStorage.getItem('preferred-theme');
-            var theme;
-            if (urlTheme === 'dark' || urlTheme === 'light') {
-                theme = urlTheme;
-            } else if (stored === 'dark' || stored === 'light') {
-                theme = stored;
-            } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                theme = 'dark';
-            } else {
-                theme = 'light';
-            }
-            document.documentElement.dataset.theme = theme;
-            var urlLang = params.get('lang');
+            var urlLang = new URLSearchParams(location.search).get('lang');
             var storedLang = localStorage.getItem('lang');
             document.documentElement.lang =
                 (urlLang === 'en' || urlLang === 'ko') ? urlLang
                 : (storedLang === 'en' || storedLang === 'ko') ? storedLang
                 : 'ko';
-            var embed = params.get('embed');
-            if (embed !== null && embed !== '0' && embed !== 'false') {
-                document.documentElement.dataset.embed = '1';
-            }
-        } catch (e) {
-            document.documentElement.dataset.theme = 'light';
-        }
+        } catch (e) { /* 기본 lang="ko" 유지 */ }
     })();
     </script>
     <style>
@@ -64,7 +68,11 @@
     html[data-embed] footer { display: none !important; }
     html[data-embed] .container { padding-top: 14px !important; }
     </style>
-    <link rel="stylesheet" href="static/style.css">
+    <!-- 공용 토큰(vc-tokens.css) → 자체 스타일 순서 고정: style.css가 --vc-* 를 alias로 참조한다 -->
+    <link rel="stylesheet" href="./static/vc-tokens.css?v=1.1.0">
+    <link rel="stylesheet" href="static/style.css?v=20260930-vc">
+    <!-- Value Compass 에코시스템 바(<vc-shell>) — 벤더링된 클래식 스크립트, 네트워크 요청 없음 -->
+    <script defer src="./static/vc-shell.js?v=1.1.0"></script>
     <!-- 클래식 스크립트는 문서 파싱을 막고 즉시 실행 — ES 모듈(main.js)은 defer이므로
          모듈 실행 시점에 Chart 전역과 annotation 플러그인이 항상 준비돼 있다. -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -77,6 +85,9 @@
 <script defer src="./static/analytics.js" data-project="gold_gap"></script>
 </head>
 <body>
+    <!-- 에코시스템 바 — 업그레이드 전(또는 JS 차단 시)에는 light DOM 허브 링크가 그대로 보인다.
+         ?embed/iframe에선 셸이 스스로 숨는다. -->
+    <vc-shell tool="gold_gap"><a class="hub-link" href="https://ducklove.duckdns.org:3691" rel="noopener" data-i18n="hub.link">Value Compass ↗</a></vc-shell>
     <div class="header">
         <div class="header-row">
             <div>
@@ -87,9 +98,6 @@
                 </div>
             </div>
             <div class="header-actions">
-                <!-- 허브(Value Compass) 백링크 — 라벨은 고유명사라 ko/en 동일(hub.link).
-                     ?embed에선 .header 전체가 숨겨지므로 별도 처리 불필요. -->
-                <a class="hub-link" href="https://ducklove.duckdns.org:3691" rel="noopener" data-i18n="hub.link">Value Compass ↗</a>
                 <button type="button" class="refresh-btn" id="refreshBtn" data-i18n="refresh">새로고침</button>
                 <!-- 언어 토글: ko 모드에선 'EN', en 모드에선 '한국어' — applyStaticStrings가 채운다 -->
                 <button type="button" class="refresh-btn" id="langToggle" data-i18n="lang.label" data-i18n-aria="lang.aria" aria-label="영어로 전환">EN</button>
@@ -286,8 +294,12 @@
             </section>
         </div>
 
-        <div class="footer" data-i18n="footer">
-            데이터 출처: KRX, COMEX, Bithumb, Upbit, yfinance
+        <div class="footer">
+            <span data-i18n="footer">데이터 출처: KRX 금현물(ACE ETF·네이버), COMEX·BTC·ETH·USDT(Yahoo Finance), World Gold Council/ICE, Gold API, Upbit, Bithumb</span>
+            <!-- 형제 도구 교차 링크 — 클릭 시 main.js가 VCShell.linkTo('all-about-gold')로 ?theme·from을 붙인다
+                 (셸 미로드 시 ?theme만 붙이는 폴백). -->
+            <a class="related-link" id="relatedAllAboutGold" href="https://ducklove.github.io/all-about-gold/"
+               rel="noopener" data-i18n="related.allAboutGold">금 투자 리서치 ↗</a>
         </div>
     </main>
 

@@ -8,3 +8,5 @@ cache/
 .claude/worktrees/
 data.json
 og.png
+summary.json
+version.json

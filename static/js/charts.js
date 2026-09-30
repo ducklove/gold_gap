@@ -39,10 +39,10 @@ export function applyChartDefaults() {
     const theme = getChartTheme();
     Chart.defaults.color = theme.textDim;
     Chart.defaults.borderColor = theme.grid;
-    // body(style.css)와 동일한 스택 — 한글 폰트를 명시해 차트 라벨(일수·괴리율 등)도
-    // Windows에서 맑은 고딕으로 통일되게 한다.
-    Chart.defaults.font.family =
-        "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Segoe UI', sans-serif";
+    // body(style.css)와 동일한 스택 — 공용 --vc-font-sans(vc-tokens.css)를 우선하고, 토큰 미로드 시
+    // 한글 폰트를 명시한 기존 스택으로 폴백해 차트 라벨(일수·괴리율 등)도 Windows에서 맑은 고딕으로 통일.
+    Chart.defaults.font.family = getThemeColor('--vc-font-sans')
+        || "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Segoe UI', sans-serif";
 }
 
 export function destroyCharts() {
@@ -217,12 +217,13 @@ export function renderGapChart(data, config) {
     const boxes = buildHighlightBoxes(data, config);
     const threshold = config.threshold;
 
+    // 임계선 라벨 글자색은 표면색 — 라이트(진한 빨강/파랑 바탕)·다크(파스텔 --vc-up/--vc-down 바탕) 모두 대비 확보
     boxes['thresholdLine'] = {
         type: 'line', yMin: threshold, yMax: threshold,
         borderColor: theme.up, borderWidth: 1.5, borderDash: [6, 4],
         label: {
             display: true, content: '+' + threshold + '%', position: 'end',
-            backgroundColor: theme.up, color: '#fff',
+            backgroundColor: theme.up, color: theme.surface || '#fff',
             font: { size: 10, family: "'SFMono-Regular', Consolas, monospace" }, padding: { x: 6, y: 3 },
         },
     };
@@ -231,7 +232,7 @@ export function renderGapChart(data, config) {
         borderColor: theme.down, borderWidth: 1.5, borderDash: [6, 4],
         label: {
             display: true, content: '-' + threshold + '%', position: 'end',
-            backgroundColor: theme.down, color: '#fff',
+            backgroundColor: theme.down, color: theme.surface || '#fff',
             font: { size: 10, family: "'SFMono-Regular', Consolas, monospace" }, padding: { x: 6, y: 3 },
         },
     };
@@ -541,9 +542,10 @@ export function renderCorrelationTable(corr) {
                 td.textContent = '-'; // 표본 부족(n < 20) 또는 분산 0
             } else {
                 td.textContent = r.toFixed(2);
-                // 혼합 최대 60%라 양 테마 모두에서 --text 글자 대비가 유지된다.
+                // 혼합 최대 60% + 다크에선 --corr-up/--corr-down이 미리 희석된 기준색이라(style.css)
+                // 양 테마 모두에서 --text 글자 대비가 유지된다.
                 const ratio = Math.round(Math.abs(r) * 60); // |r|=1 → 60% 혼합
-                const base = r >= 0 ? 'var(--up)' : 'var(--down)';
+                const base = r >= 0 ? 'var(--corr-up, var(--up))' : 'var(--corr-down, var(--down))';
                 td.style.backgroundColor = `color-mix(in srgb, ${base} ${ratio}%, var(--surface))`;
             }
             // hover 전용 title은 터치·스크린리더에 닿지 않으므로 aria-label을 병행한다.

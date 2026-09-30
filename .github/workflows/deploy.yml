@@ -20,12 +20,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # data.json·og.png는 master가 아닌 data 전용 브랜치에 산다
+      # data.json·og.png·summary.json·version.json은 master가 아닌 data 전용 브랜치에 산다
       - name: Fetch data files (data 브랜치)
         run: |
           git fetch --depth=1 origin data
           git show FETCH_HEAD:data.json > data.json
           git show FETCH_HEAD:og.png > og.png || rm -f og.png
+          for f in summary.json version.json; do
+            git show "FETCH_HEAD:$f" > "$f" 2>/dev/null || rm -f "$f"
+          done
+
+      # 허브용 요약은 계약(envelope v1) 검증을 통과할 때만 싣는다 — 실패하면 두 파일을 빼고 배포를
+      # 계속한다(허브는 404/검증 실패 시 레거시 data.json으로 폴백). vc_publish.py는 stdlib 전용.
+      - name: Validate hub summary (envelope v1)
+        run: |
+          if [ -s summary.json ]; then
+            python3 goldgap/vc_publish.py validate summary.json \
+              || { echo "::warning::summary.json 검증 실패 — 배포에서 제외"; rm -f summary.json version.json; }
+          else
+            rm -f summary.json version.json
+          fi
 
       - name: Assemble static site
         run: |
@@ -37,6 +51,10 @@ jobs:
           cp config.json _site/config.json
           cp data.json _site/data.json
           if [ -s og.png ]; then cp og.png _site/og.png; fi
+          # 허브용 요약 — 계약상 공개 URL은 <사이트>/summary.json, <사이트>/version.json
+          for f in summary.json version.json; do
+            if [ -s "$f" ]; then cp "$f" "_site/$f"; fi
+          done
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

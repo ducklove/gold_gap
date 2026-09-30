@@ -31,17 +31,29 @@ jobs:
 
       # data.json은 master가 아닌 data 전용 브랜치에 산다 (코드 히스토리 오염 방지).
       # 증분 갱신의 기준이자 임계 돌파 비교의 직전 스냅샷.
+      # summary.json·version.json(허브용 요약)도 data 브랜치에 산다 — write_if_changed의 비교 기준.
       - name: Fetch current data.json (data 브랜치)
         run: |
           git fetch --depth=1 origin data
           git show FETCH_HEAD:data.json > data.json
           cp data.json /tmp/data_prev.json
+          for f in summary.json version.json; do
+            git show "FETCH_HEAD:$f" > "$f" 2>/dev/null || rm -f "$f"
+          done
 
       - name: Generate data.json
         run: python generate_data.py
 
-      # SNS 공유 카드 — 실패해도 데이터 갱신은 계속 (비치명)
+      # 허브(Value Compass)용 summary.json/version.json(envelope v1) + 내용 변경 판정.
+      # data_changed: updated_at·meta.generated_at을 뺀 data.json 내용이 직전과 다른지.
+      # summary_changed: summary/version을 새로 썼는지(같은 내용이면 쓰지 않음).
+      - name: Publish hub summary + detect content change
+        id: publish
+        run: python -m goldgap.hub_summary --data data.json --prev /tmp/data_prev.json
+
+      # SNS 공유 카드 — 실패해도 데이터 갱신은 계속 (비치명). 내용이 같으면 생략.
       - name: Generate og.png
+        if: steps.publish.outputs.data_changed == 'true'
         run: python -m goldgap.og_image data.json og.png || echo "og 이미지 생성 실패 — 계속 진행"
 
       - name: Detect threshold crossings
@@ -52,25 +64,41 @@ jobs:
             echo "found=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # 타임스탬프(updated_at·meta.generated_at)만 바뀐 실행은 커밋·배포하지 않는다.
+      # data.json·og.png는 내용이 바뀐 경우에만, summary/version은 헬퍼가 새로 쓴 경우에만 반영.
       - name: Commit and push (data 브랜치)
         id: commit
+        env:
+          DATA_CHANGED: ${{ steps.publish.outputs.data_changed }}
+          SUMMARY_CHANGED: ${{ steps.publish.outputs.summary_changed }}
         run: |
-          if cmp -s data.json /tmp/data_prev.json; then
-            echo "No changes"
+          if [ "$DATA_CHANGED" != "true" ] && [ "$SUMMARY_CHANGED" != "true" ]; then
+            echo "No content changes (timestamps only) — skip commit/deploy"
             echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git worktree add --detach /tmp/data-wt FETCH_HEAD
-            cp data.json /tmp/data-wt/data.json
-            if [ -f og.png ]; then cp og.png /tmp/data-wt/og.png; fi
-            cd /tmp/data-wt
-            git add data.json
-            if [ -f og.png ]; then git add og.png; fi
-            git commit -m "Update data.json $(date -u +'%Y-%m-%d %H:%M') UTC"
-            git push origin HEAD:refs/heads/data
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git worktree add --detach /tmp/data-wt FETCH_HEAD
+          files=""
+          if [ "$DATA_CHANGED" = "true" ]; then
+            files="data.json"
+            if [ -f og.png ]; then files="$files og.png"; fi
+          fi
+          for f in summary.json version.json; do
+            if [ -f "$f" ]; then files="$files $f"; fi
+          done
+          for f in $files; do cp "$f" "/tmp/data-wt/$f"; done
+          cd /tmp/data-wt
+          git add $files
+          if git diff --cached --quiet; then
+            echo "No staged changes — skip commit/deploy"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "Update data.json $(date -u +'%Y-%m-%d %H:%M') UTC"
+          git push origin HEAD:refs/heads/data
+          echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Trigger deploy
         if: steps.commit.outputs.changed == 'true'
