@@ -6,7 +6,10 @@
 // URL 파라미터: ?asset=gold|bitcoin|...  ?range=1m|3m|6m|1y|all
 //              ?<asset>_source=<mode>   (intl_modes 보유 자산 — gold는 기존 ?gold_source 그대로)
 //              ?lang=en (영어 모드일 때만 기록 — ko면 파라미터 제거)
-//              ?theme=dark|light ?embed (head 부트 스크립트에서 처리)
+//              ?theme=dark|light ?embed (head의 공용 vc:theme-boot 블록에서 처리)
+//
+// 테마: Value Compass 셸(window.VCShell, static/vc-shell.js)이 있으면 토글이 VCShell.setTheme을
+// 호출하고, 차트 재렌더는 'vc:themechange' 이벤트로 수행한다(셸 없으면 기존 로컬 로직).
 
 import { buildAssetConfigs } from './config.js';
 import { RANGE_OPTIONS, DEFAULT_RANGE, isValidRange, sliceDataByRange, rangeStartIndex } from './periods.js';
@@ -21,6 +24,9 @@ import { gapHistoricalStats, formatHistoricalStats } from './stats.js';
 import { alignSeries, buildCorrelationMatrix, collectMarketSeries, latestWithChange } from './market.js';
 import { decomposePriceChange } from './decompose.js';
 import { t, getLang, setLang, applyStaticStrings, localizeAssetConfig } from './i18n.js';
+import {
+    getShell, requestTheme, onShellThemeChange, bindSiblingLink, ALL_ABOUT_GOLD_ID,
+} from './ecosystem.js';
 
 const THEME_STORAGE_KEY = 'theme';
 
@@ -32,6 +38,7 @@ let currentAsset = 'gold';
 let currentRange = DEFAULT_RANGE;
 const currentIntlModes = {}; // 자산별 선택된 국제가격 기준 모드
 let refreshInFlight = false;
+let refreshRelatedLinks = null; // 형제 링크 href 재계산(테마 변경 시) — bindRelatedLinks가 설정
 let lastUpdatedRaw = '';     // updated_at 원문 — 언어 전환 시 접두만 다시 붙여 재표시
 
 function setText(id, text) {
@@ -614,6 +621,7 @@ function applyTheme(theme, { persist = true, rerender = true } = {}) {
     currentTheme = theme === 'dark' ? 'dark' : 'light';
     document.documentElement.dataset.theme = currentTheme;
     updateThemeButtonLabel();
+    if (refreshRelatedLinks) refreshRelatedLinks();
 
     if (persist) {
         try {
@@ -632,9 +640,27 @@ function bindThemeButton() {
     const themeBtn = document.getElementById('themeToggle');
     if (!themeBtn) return;
     themeBtn.addEventListener('click', () => {
-        applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        // 셸이 있으면 셸이 저장·적용·'vc:themechange' 발행 → 아래 구독이 재렌더.
+        requestTheme(currentTheme === 'dark' ? 'light' : 'dark', {
+            shell: getShell(),
+            fallback: theme => applyTheme(theme),
+        });
     });
     updateThemeButtonLabel();
+}
+
+// 셸 테마 변경(셸 토글·다른 탭·OS 다크모드·허브 iframe postMessage) → 로컬 상태 동기화 + 차트 재렌더.
+// 저장은 셸이 이미 했으므로 persist=false.
+function bindShellTheme() {
+    onShellThemeChange(document, () => currentTheme, theme => applyTheme(theme, { persist: false }));
+}
+
+// 형제 도구 교차 링크(푸터 '금 투자 리서치 ↗') — 이동 직전 현재 테마를 실어 보낸다.
+function bindRelatedLinks() {
+    refreshRelatedLinks = bindSiblingLink(document.getElementById('relatedAllAboutGold'), ALL_ABOUT_GOLD_ID, {
+        getShell: () => getShell(),
+        getTheme: () => currentTheme,
+    });
 }
 
 function bindRefreshButton() {
@@ -713,6 +739,8 @@ renderTabs();
 renderRangeToggle();
 applyChartDefaults();
 bindThemeButton();
+bindShellTheme();
+bindRelatedLinks();
 bindRefreshButton();
 bindLangButton();
 bindChartRatioWatcher();

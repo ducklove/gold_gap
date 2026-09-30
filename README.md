@@ -72,7 +72,7 @@ pytest -q
 ruff check .
 
 # 4) 프론트엔드 JS 단위 테스트 (Node 20+, 의존성 설치 불필요)
-node --test tests/js
+npm test                 # = node --test tests/js/*.test.mjs (셸 glob — Node 20·22+ 공통)
 ```
 
 `app.py`는 개발 편의용입니다. `/data.json`·`/config.json`·`/sw.js`·`/manifest.webmanifest`는 리포 루트 파일을 그대로 서빙하고, `/api/data`는 24시간 파일 캐시를 사용한 실시간 수집 경로입니다.
@@ -164,7 +164,7 @@ R_dom(%)       = R_usd(%p)           + R_fx(%p)          + R_gap(%p, 잔차)
 | `gold_source` | `ny_futures` \| `london_spot` | 금 국제가 기준 |
 | `range` | `1m` \| `3m` \| `6m` \| `1y` \| `all` | 표시 기간 (기본 1y) |
 | `lang` | `en` | 영어 UI (기본 한국어; 페이지 타이틀·og 메타는 한국어 유지) |
-| `theme` | `light` \| `dark` | 테마 강제 (미지정 시 저장값 → 시스템 설정) |
+| `theme` | `light` \| `dark` | 테마 강제 — 저장하지 않음 (미지정 시 공용 `theme` 저장값 → 시스템 설정) |
 | `embed` | 존재 시 | 헤더·푸터 숨김 (iframe 임베드용) |
 
 임베드 예시:
@@ -188,12 +188,31 @@ R_dom(%)       = R_usd(%p)           + R_fx(%p)          + R_gap(%p, 잔차)
 
 | 워크플로우 | 트리거 | 역할 |
 |---|---|---|
-| `update-data.yml` | 30분 cron / 수동 | data.json 증분 갱신 → `data` 브랜치 커밋, 변경 시 배포 트리거, 임계 돌파·실패 이슈 알림 |
-| `deploy.yml` | master push / 수동 | `data` 브랜치의 data.json + master의 정적 산출물 조립 → GitHub Pages 배포 |
+| `update-data.yml` | 30분 cron / 수동 | data.json 증분 갱신 + 허브용 summary.json/version.json 발행 → `data` 브랜치 커밋. 타임스탬프(`updated_at`·`meta.generated_at`)만 바뀐 실행은 og·커밋·배포 생략. 임계 돌파·실패 이슈 알림 |
+| `deploy.yml` | master push / 수동 | `data` 브랜치의 data.json·og.png·summary.json·version.json + master의 정적 산출물 조립 → GitHub Pages 배포 (summary는 envelope 검증 통과 시에만) |
 | `ci.yml` | push·PR (`data` 브랜치 제외) | `data` 브랜치에서 골든 data.json fetch 후 ruff + pytest + node --test |
 
 데이터는 `data` orphan 브랜치에만 커밋된다 — master를 클론해도 data.json이 없으며,
 위 로컬 개발 0번 명령으로 받아온다.
+
+## Value Compass 생태계 연동
+
+이 대시보드는 [Value Compass](https://ducklove.duckdns.org:3691) 허브 생태계의 한 도구입니다
+(레지스트리 id `gold_gap`, 정본: value-invest `config/ecosystem.json`).
+
+- **에코시스템 바**: `templates/index.html` 최상단 `<vc-shell tool="gold_gap">` — 허브·형제 도구
+  전환 바. 스크립트가 막혀도 light DOM 허브 링크(Value Compass ↗)가 그대로 보이고, `?embed`/iframe에선 숨는다.
+- **벤더링 파일 (직접 수정 금지)**: `static/vc-shell.js`, `static/vc-tokens.css`, `goldgap/vc_publish.py`,
+  `templates/index.html`의 `<!-- vc:theme-boot -->` 블록. 허브에서 고친 뒤
+  `node ../value-invest/scripts/sync-ecosystem.mjs --write --only gold_gap`으로 다시 복사한다.
+- **테마**: 공용 `theme` 키(구 `preferred-theme`은 부트 블록이 1회 이전), `?theme`는 저장 없이 적용,
+  미설정 시 OS 설정 추종. 테마 토글은 `VCShell.setTheme`을 호출하고 차트는 `vc:themechange`로 재렌더.
+- **색 관례**: `--up`/`--down`은 공용 `--vc-up`(빨강)/`--vc-down`(파랑) alias — 한국 시장 관례.
+- **허브용 요약**: `summary.json`(envelope v1, 자산별 최신 괴리율 ~1 KB) + `version.json`을
+  `python -m goldgap.hub_summary`가 data 브랜치에 발행하고 배포가 사이트 루트로 복사한다
+  (`https://ducklove.github.io/gold_gap/summary.json`). 내용이 같으면 파일을 다시 쓰지 않는다.
+  계약: value-invest `docs/ecosystem/data-contract.md` §6.6.
+- **교차 링크**: 푸터 "금 투자 리서치 ↗" → all-about-gold (현재 테마를 `?theme`로 전달).
 
 ## 알림 웹훅 (선택)
 

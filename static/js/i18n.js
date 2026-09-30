@@ -85,7 +85,8 @@ export const STRINGS = {
         'decomp.fx': '환율 (USD/KRW)',
         'decomp.gap': '김치프리미엄',
         'decomp.caption': '로그수익률 분해 — 세 요인의 합 = 국내 가격 변화 (김프 요인은 잔차)',
-        'footer': '데이터 출처: KRX, COMEX, Bithumb, Upbit, yfinance',
+        'footer': '데이터 출처: KRX 금현물(ACE ETF·네이버), COMEX·BTC·ETH·USDT(Yahoo Finance), World Gold Council/ICE, Gold API, Upbit, Bithumb',
+        'related.allAboutGold': '금 투자 리서치 ↗',
     },
     en: {
         'app.title': 'Kimchi Premium Dashboard',
@@ -156,7 +157,8 @@ export const STRINGS = {
         'decomp.fx': 'FX (USD/KRW)',
         'decomp.gap': 'Kimchi premium',
         'decomp.caption': 'Log-return decomposition — the three factors sum to the domestic price change (the premium factor is the residual)',
-        'footer': 'Data sources: KRX, COMEX, Bithumb, Upbit, yfinance',
+        'footer': 'Data sources: KRX gold spot (ACE ETF via Naver), COMEX·BTC·ETH·USDT (Yahoo Finance), World Gold Council/ICE, Gold API, Upbit, Bithumb',
+        'related.allAboutGold': 'Gold research ↗',
     },
 };
 
