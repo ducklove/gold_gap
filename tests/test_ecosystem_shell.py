@@ -12,6 +12,8 @@ import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION_TAG = "?v=20260930-vc"
+# 벤더링된 vc-*.js/css 의 ?v= 라벨은 정본 VCShell.version 이다(허브 sync-ecosystem.mjs 가 검사·갱신).
+VC_TAG = "?v=1.1.0"
 
 
 def _read(*parts):
@@ -45,10 +47,10 @@ def test_theme_boot_block_is_filled_once_and_precedes_stylesheets(html):
 
 def test_tokens_before_own_css_and_shell_script_deferred(html):
     head = _head(html)
-    tokens = head.index(f'href="./static/vc-tokens.css{VERSION_TAG}"')
+    tokens = head.index(f'href="./static/vc-tokens.css{VC_TAG}"')
     own = head.index(f'href="static/style.css{VERSION_TAG}"')
     assert tokens < own
-    assert re.search(r'<script defer src="\./static/vc-shell\.js\?v=20260930-vc"></script>', head)
+    assert re.search(r'<script defer src="\./static/vc-shell\.js\?v=1\.1\.0"></script>', head)
 
 
 def test_shell_tag_is_first_in_body_with_hub_link_fallback(html):
@@ -109,11 +111,12 @@ def test_correlation_cells_use_diluted_base_in_dark():
 
 def test_service_worker_precaches_versioned_assets(html):
     sw = _read("sw.js")
-    for asset in ("static/vc-tokens.css", "static/vc-shell.js", "static/style.css"):
-        assert f"'{asset}{VERSION_TAG}'" in sw
-        assert f"{asset}{VERSION_TAG}" in html
+    for asset, tag in (("static/vc-tokens.css", VC_TAG), ("static/vc-shell.js", VC_TAG),
+                       ("static/style.css", VERSION_TAG)):
+        assert f"'{asset}{tag}'" in sw
+        assert f"{asset}{tag}" in html
     assert "'static/js/ecosystem.js'" in sw
-    assert int(re.search(r"const CACHE = 'goldgap-v(\d+)'", sw).group(1)) >= 5
+    assert int(re.search(r"const CACHE = 'goldgap-v(\d+)'", sw).group(1)) >= 6
 
 
 def test_deploy_ships_static_dir_and_hub_summary():

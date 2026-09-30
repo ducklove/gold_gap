@@ -19,15 +19,16 @@
 // v3: 모바일 차트 높이·터치 타겟·상관 셀 접근성 정비(style.css/charts.js/index.html 갱신).
 // v4: 구간 테이블 헤더 정렬(table-sort.js)·핀치 줌·회전 시 차트 비율 재적용·한글 폰트 스택.
 // v5: Value Compass 에코시스템 바(vc-shell.js)·공용 토큰(vc-tokens.css)·ecosystem.js, 방향색 alias.
-const CACHE = 'goldgap-v5';
+// v6: vc-shell.js·vc-tokens.css ?v= 라벨을 정본 VCShell.version(1.1.0)으로 통일.
+const CACHE = 'goldgap-v6';
 
 // 앱 셸 프리캐시 목록 — './'는 SW 위치 기준 사이트 루트 문서.
 const APP_SHELL = [
     './',
     // index.html이 ?v= 캐시버스터를 붙여 요청하는 자원은 같은 URL로 프리캐시해야 적중한다
     // (tests/test_ecosystem_shell.py가 index.html과의 일치를 검사).
-    'static/vc-tokens.css?v=20260930-vc',
-    'static/vc-shell.js?v=20260930-vc',
+    'static/vc-tokens.css?v=1.1.0',
+    'static/vc-shell.js?v=1.1.0',
     'static/style.css?v=20260930-vc',
     'static/js/main.js',
     'static/js/config.js',
